@@ -7,6 +7,10 @@ psycopg-binary~=3.3.4
 alembic~=1.18.4
 
 pyomo~=6.10.0
+numpy~=2.4.4
+matplotlib~=3.10.9
 # IPOPT устанавливается отдельно: conda install -c conda-forge ipopt cyipopt -y
 
 ruff~=0.15.12
+
+loguru~=0.7.3
