@@ -7,14 +7,14 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.database.base import Base
 
 if TYPE_CHECKING:
-    from app.database.models.scenario import Scenario
-    from app.database.models.crop import CropAllocation
-    from app.database.models.livestock import LivestockAllocation
-    from app.database.models.feed import FeedAllocation
-    from app.database.models.operation import MonthlyOperation
+    from app.database.models.scenario import ScenarioModel
+    from app.database.models.crop import CropAllocationModel
+    from app.database.models.livestock import LivestockAllocationModel
+    from app.database.models.feed import FeedAllocationModel
+    from app.database.models.operation import MonthlyOperationModel
 
 
-class OptimizationResult(Base):
+class OptimizationResultModel(Base):
     """Модель хранящая данные о результатах оптимизации"""
 
     __tablename__ = "optimization_results"
@@ -31,11 +31,11 @@ class OptimizationResult(Base):
     solution_time_sec: Mapped[float | None] = mapped_column(Numeric(10, 3))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
-    scenario: Mapped["Scenario"] = relationship(back_populates="results")
-    crop_allocations: Mapped[list["CropAllocation"]] = relationship(back_populates="result", cascade="all, delete-orphan")
-    livestock_allocations: Mapped[list["LivestockAllocation"]] = relationship(back_populates="result", cascade="all, delete-orphan")
-    feed_allocations: Mapped[list["FeedAllocation"]] = relationship(back_populates="result", cascade="all, delete-orphan")
-    monthly_operations: Mapped[list["MonthlyOperation"]] = relationship(back_populates="result", cascade="all, delete-orphan")
+    scenario: Mapped["ScenarioModel"] = relationship(back_populates="results")
+    crop_allocations: Mapped[list["CropAllocationModel"]] = relationship(back_populates="result", cascade="all, delete-orphan")
+    livestock_allocations: Mapped[list["LivestockAllocationModel"]] = relationship(back_populates="result", cascade="all, delete-orphan")
+    feed_allocations: Mapped[list["FeedAllocationModel"]] = relationship(back_populates="result", cascade="all, delete-orphan")
+    monthly_operations: Mapped[list["MonthlyOperationModel"]] = relationship(back_populates="result", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<OptimizationResult(id={self.result_id}, profit={self.total_profit_byn})>"

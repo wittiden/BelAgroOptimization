@@ -6,10 +6,10 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.database.base import Base
 
 if TYPE_CHECKING:
-    from app.database.models.optimization import OptimizationResult
+    from app.database.models.optimization import OptimizationResultModel
 
 
-class MonthlyOperation(Base):
+class MonthlyOperationModel(Base):
     """Модель хранящая данные о календаре операций"""
 
     __tablename__ = "monthly_operations"
@@ -35,7 +35,7 @@ class MonthlyOperation(Base):
     concentrate_consumed: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
     pasture_consumed: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
 
-    result: Mapped["OptimizationResult"] = relationship(back_populates="monthly_operations")
+    result: Mapped["OptimizationResultModel"] = relationship(back_populates="monthly_operations")
 
     def __repr__(self) -> str:
         return f"<MonthlyOperation(year={self.year}, month={self.month})>"

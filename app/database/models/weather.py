@@ -6,10 +6,10 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.database.base import Base
 
 if TYPE_CHECKING:
-    from app.database.models.scenario import Scenario
+    from app.database.models.scenario import ScenarioModel
 
 
-class WeatherData(Base):
+class WeatherDataModel(Base):
     """Модель хранящая данные о погоде"""
 
     __tablename__ = "weather_data"
@@ -28,7 +28,7 @@ class WeatherData(Base):
     rainfall_mm: Mapped[float] = mapped_column(Numeric(8, 2))
     description: Mapped[str | None] = mapped_column(String(100))
 
-    scenario: Mapped["Scenario"] = relationship(back_populates="weather_data")
+    scenario: Mapped["ScenarioModel"] = relationship(back_populates="weather_data")
 
     def __repr__(self) -> str:
         return f"<WeatherData(year={self.year}, month={self.month}, temp={self.temperature_avg})>"

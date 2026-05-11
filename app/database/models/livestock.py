@@ -6,11 +6,11 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.database.base import Base
 
 if TYPE_CHECKING:
-    from app.database.models.scenario import Scenario
-    from app.database.models.optimization import OptimizationResult
+    from app.database.models.scenario import ScenarioModel
+    from app.database.models.optimization import OptimizationResultModel
 
 
-class LivestockData(Base):
+class LivestockDataModel(Base):
     """Модель хранящая данные о животноводстве"""
 
     __tablename__ = "livestock_data"
@@ -36,13 +36,13 @@ class LivestockData(Base):
     cost_winter_byn: Mapped[float] = mapped_column(Numeric(10, 2))
     energy_cost_winter_byn: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
 
-    scenario: Mapped["Scenario"] = relationship(back_populates="livestock_data")
+    scenario: Mapped["ScenarioModel"] = relationship(back_populates="livestock_data")
 
     def __repr__(self) -> str:
         return f"<LivestockData(animal={self.animal_type}, min={self.min_heads}, max={self.max_heads})>"
 
 
-class LivestockAllocation(Base):
+class LivestockAllocationModel(Base):
     """Модель хранящая данные о распределении животноводства"""
 
     __tablename__ = "livestock_allocations"
@@ -60,7 +60,7 @@ class LivestockAllocation(Base):
     milk_yield_summer_kg: Mapped[float | None] = mapped_column(Numeric(10, 2))
     milk_yield_winter_kg: Mapped[float | None] = mapped_column(Numeric(10, 2))
 
-    result: Mapped["OptimizationResult"] = relationship(back_populates="livestock_allocations")
+    result: Mapped["OptimizationResultModel"] = relationship(back_populates="livestock_allocations")
 
     def __repr__(self) -> str:
         return f"<LivestockAllocation(year={self.year}, type={self.animal_type}, heads={self.heads})>"

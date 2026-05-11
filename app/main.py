@@ -2,16 +2,16 @@
 
 from app.database.engine import session_factory
 from app.modules.model.opt_model import BelarusAgroModel
-from app.modules.repository.repo import AgroRepository, ModelDataBuilder
+from app.modules.repository.repo import AgroQueriesRepository
+from app.modules.model.builder import ModelDataBuilder
 
 
 def main():
-    # Подключение к БД
 
 
     with session_factory() as session:
         # Создаём репозиторий и строитель данных
-        repo = AgroRepository(session)
+        repo = AgroQueriesRepository(session)
         builder = ModelDataBuilder(repo)
 
         # Загружаем данные из активного сценария

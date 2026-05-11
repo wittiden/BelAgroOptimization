@@ -6,10 +6,10 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.database.base import Base
 
 if TYPE_CHECKING:
-    from app.database.models.scenario import Scenario
+    from app.database.models.scenario import ScenarioModel
 
 
-class Field(Base):
+class FieldModel(Base):
     """Модель хранящая сведения о полях"""
 
     __tablename__ = "fields"
@@ -24,13 +24,13 @@ class Field(Base):
     soil_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     soil_fertility: Mapped[float] = mapped_column(Numeric(5, 2), default=1.0)
 
-    scenario_data: Mapped[list["FieldData"]] = relationship(back_populates="field")
+    scenario_data: Mapped[list["FieldDataModel"]] = relationship(back_populates="field")
 
     def __repr__(self) -> str:
         return f"<Field(code={self.code}, area_ha={self.area_ha})>"
 
 
-class FieldData(Base):
+class FieldDataModel(Base):
     """Модель хранящая данные о полях"""
 
     __tablename__ = "field_data"
@@ -46,8 +46,8 @@ class FieldData(Base):
     field_id: Mapped[UUID] = mapped_column(ForeignKey("fields.field_id"), nullable=False)
     area_ha: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
 
-    scenario: Mapped["Scenario"] = relationship(back_populates="field_data")
-    field: Mapped["Field"] = relationship(back_populates="scenario_data")
+    scenario: Mapped["ScenarioModel"] = relationship(back_populates="field_data")
+    field: Mapped["FieldModel"] = relationship(back_populates="scenario_data")
 
 
     def __repr__(self) -> str:

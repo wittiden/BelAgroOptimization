@@ -6,12 +6,12 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 from app.database.base import Base
 
 if TYPE_CHECKING:
-    from app.database.models.scenario import Scenario
-    from app.database.models.optimization import OptimizationResult
-    from app.database.models.feed import FeedOutput
+    from app.database.models.scenario import ScenarioModel
+    from app.database.models.optimization import OptimizationResultModel
+    from app.database.models.feed import FeedOutputModel
 
 
-class Crop(Base):
+class CropModel(Base):
     """Модель хранящая общие данные об урожае"""
 
     __tablename__ = "crops"
@@ -32,8 +32,8 @@ class Crop(Base):
     vegetation_days: Mapped[int | None] = mapped_column(nullable=True)
     rotation_gap_years: Mapped[int] = mapped_column(default=1)
 
-    scenario_data: Mapped[list["CropData"]] = relationship(back_populates="crop")
-    feed_outputs: Mapped[list["FeedOutput"]] = relationship(back_populates="crop")
+    scenario_data: Mapped[list["CropDataModel"]] = relationship(back_populates="crop")
+    feed_outputs: Mapped[list["FeedOutputModel"]] = relationship(back_populates="crop")
 
     @property
     def is_winter_crop(self) -> bool:
@@ -51,7 +51,7 @@ class Crop(Base):
         return f"<Crop(code={self.code}, name={self.name})>"
 
 
-class CropData(Base):
+class CropDataModel(Base):
     """Модель хранящая технические данные об урожае"""
 
     __tablename__ = "crop_data"
@@ -80,14 +80,14 @@ class CropData(Base):
     temp_sensitivity: Mapped[float | None] = mapped_column(Numeric(5, 4))
     water_requirement_mm: Mapped[float | None] = mapped_column(Numeric(8, 2))
 
-    scenario: Mapped["Scenario"] = relationship(back_populates="crop_data")
-    crop: Mapped["Crop"] = relationship(back_populates="scenario_data")
+    scenario: Mapped["ScenarioModel"] = relationship(back_populates="crop_data")
+    crop: Mapped["CropModel"] = relationship(back_populates="scenario_data")
 
     def __repr__(self) -> str:
         return f"<CropData(scenario={self.scenario_id}, crop={self.crop_id})>"
 
 
-class CropAllocation(Base):
+class CropAllocationModel(Base):
     """Модель хранящая данные о распределении урожая"""
 
     __tablename__ = "crop_allocations"
@@ -106,7 +106,7 @@ class CropAllocation(Base):
     yield_ts: Mapped[float] = mapped_column(Numeric(12, 2))
     fert_kg: Mapped[float] = mapped_column(Numeric(10, 2))
 
-    result: Mapped["OptimizationResult"] = relationship(back_populates="crop_allocations")
+    result: Mapped["OptimizationResultModel"] = relationship(back_populates="crop_allocations")
 
     def __repr__(self) -> str:
         return f"<CropAllocation(year={self.year}, field={self.field_code}, crop={self.crop_code}, area={self.area_ha})>"
