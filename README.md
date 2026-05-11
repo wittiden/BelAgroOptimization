@@ -49,7 +49,8 @@
 * Alembic
 * Pydantic 2.13+
 * pandas
-* openpyxl
+* matplotlib
+* loguru
 
 ---
 
@@ -245,17 +246,13 @@ python -m app.main
 * ✔ Валидация через Pydantic
 * ✔ Агротехнические ограничения
 * ✔ Хранение результатов оптимизации
+* ✔ Matplotlib визуализация
 
 ---
 
 # 📈 Возможные улучшения
 
-* stochastic optimization
-* погодные сценарии
 * динамика плодородия почв
 * машинно-тракторный парк
 * трудовые ресурсы
 * Streamlit/FastAPI интерфейс
-* Plotly/Matplotlib визуализация
-* REST API
-* Excel import/export UI
