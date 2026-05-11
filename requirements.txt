@@ -1,0 +1,9 @@
+pydantic~=2.13.4
+pydantic-settings~=2.14.1
+
+sqlalchemy~=2.0.49
+psycopg-binary~=3.3.4
+alembic~=1.18.4
+
+pyomo~=6.10.0
+# IPOPT устанавливается отдельно: conda install -c conda-forge ipopt cyipopt -y
