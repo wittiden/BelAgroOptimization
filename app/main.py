@@ -1,11 +1,8 @@
 # app/run.py
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.database.engine import session_factory
-from app.model.opt_model import BelarusAgroModel
-from app.repository.repo import AgroRepository, ModelDataBuilder
+from app.modules.model.opt_model import BelarusAgroModel
+from app.modules.repository.repo import AgroRepository, ModelDataBuilder
 
 
 def main():
