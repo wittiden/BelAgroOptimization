@@ -2,7 +2,7 @@ from typing import Any
 from uuid import UUID
 
 from app.database.models import LivestockDataModel
-from app.modules.repository.repo import AgroQueriesRepository
+from app.modules.repository.queries import AgroQueriesRepository
 
 
 class ModelDataBuilder:

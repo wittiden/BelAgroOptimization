@@ -2,7 +2,7 @@
 
 from app.database.engine import session_factory
 from app.modules.model.opt_model import BelarusAgroModel
-from app.modules.repository.repo import AgroQueriesRepository
+from app.modules.repository.queries import AgroQueriesRepository
 from app.modules.model.builder import ModelDataBuilder
 
 
