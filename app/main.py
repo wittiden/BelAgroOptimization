@@ -1,7 +1,31 @@
+# app/run.py
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.database.engine import session_factory
+from app.model.opt_model import BelarusAgroModel
+from app.repository.repo import AgroRepository, ModelDataBuilder
 
 
-def main() -> None:
-    pass
+def main():
+    # Подключение к БД
 
-if __name__ == '__main__':
+
+    with session_factory() as session:
+        # Создаём репозиторий и строитель данных
+        repo = AgroRepository(session)
+        builder = ModelDataBuilder(repo)
+
+        # Загружаем данные из активного сценария
+        model_data = builder.build_from_active_scenario()
+
+        # Создаём и запускаем модель
+        model = BelarusAgroModel(model_data)
+
+        if model.solve():
+            model.print_results()
+
+
+if __name__ == "__main__":
     main()

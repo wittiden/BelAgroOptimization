@@ -7,3 +7,5 @@ alembic~=1.18.4
 
 pyomo~=6.10.0
 # IPOPT устанавливается отдельно: conda install -c conda-forge ipopt cyipopt -y
+
+ruff~=0.15.12
