@@ -1,5 +1,3 @@
-# app/models_with_repo.py
-
 import pyomo.environ as pyo
 from pyomo.environ import value, exp, Constraint, Objective, maximize, Var
 from pyomo.opt import SolverStatus, TerminationCondition
@@ -88,170 +86,177 @@ class BelarusAgroModel:
 
         # ========== ОГРАНИЧЕНИЯ ==========
 
+        # 1. Использование земли
         def land_rule(m, f, y):
             return sum(m.area[c, f, y] for c in m.C) <= self.field_area[f]
-
         m.land_limit = Constraint(m.F, m.Y, rule=land_rule)
 
+        # 2. Зерновые минимум (ИСПРАВЛЕНО: убраны .get())
         def grain_rule(m, y):
             grain = sum(
-                m.area['winter_wheat', f, y] + m.area['spring_wheat', f, y] + m.area['barley', f, y] for f in m.F)
+                m.area['winter_wheat', f, y] +
+                m.area['spring_wheat', f, y] +
+                m.area['barley', f, y]
+                for f in m.F
+            )
             return grain >= self.total_land * self.grain_min_pct
-
         m.grain_rule = Constraint(m.Y, rule=grain_rule)
 
+        # 3. Кормовые минимум
         def feed_crop_rule(m, y):
-            feed_area = sum(m.area['corn_silage', f, y] + m.area['grass', f, y] for f in m.F)
+            feed_area = sum(
+                m.area['corn_silage', f, y] +
+                m.area['grass', f, y]
+                for f in m.F
+            )
             return feed_area >= self.total_land * self.feed_crop_min_pct
-
         m.feed_crop_rule = Constraint(m.Y, rule=feed_crop_rule)
 
+        # 4. Паровые поля
         def fallow_rule(m, y):
             fallow_area = sum(m.area['fallow', f, y] for f in m.F)
             return fallow_area >= self.total_land * self.fallow_min_pct
-
         m.fallow_rule = Constraint(m.Y, rule=fallow_rule)
 
+        # 5. Картофель ограничение
         def potato_rule(m, y):
             return sum(m.area['potato', f, y] for f in m.F) <= self.total_land * self.potato_max_pct
-
         m.potato_rule = Constraint(m.Y, rule=potato_rule)
 
+        # 6. Рапс ограничение
         def rape_rule(m, y):
             return sum(m.area['rapeseed', f, y] for f in m.F) <= self.total_land * self.rapeseed_max_pct
-
         m.rape_rule = Constraint(m.Y, rule=rape_rule)
 
+        # 7. Производство урожая
         def prod_rule(m, c, f, y):
             wf = self.get_weather_factor(c, y)
             fert_effect = (self.fert_response[c] * m.fert[f, y]) / (1 + 0.015 * m.fert[f, y])
             yield_per_ha = (self.base_yield[c] + fert_effect) * wf
             return m.production[c, f, y] == yield_per_ha * m.area[c, f, y]
-
         m.prod_rule = Constraint(m.C, m.F, m.Y, rule=prod_rule)
 
+        # 8. Производство кормов
         def feed_prod_rule(m, y, ft):
             return m.feed_prod[y, ft] == sum(
                 m.production[c, f, y] * self.feed_output.get(c, {}).get(ft, 0)
                 for c in m.C for f in m.F
             )
-
         m.feed_prod_rule = Constraint(m.Y, m.FEED, rule=feed_prod_rule)
 
-        # Extra кормление
+        # 9. Дополнительное кормление
         def extra_cow_summer_rule(m, y, ft):
-            return m.extra_cow_summer[y, ft] >= m.cow_feed_summer[y, ft] - self.base_feed_need_summer['cow'][ft]
-
+            need = self.base_feed_need_summer.get('cow', {}).get(ft, 0)
+            return m.extra_cow_summer[y, ft] >= m.cow_feed_summer[y, ft] - need
         m.extra_cow_summer_rule = Constraint(m.Y, m.FEED, rule=extra_cow_summer_rule)
 
         def extra_cow_winter_rule(m, y, ft):
-            return m.extra_cow_winter[y, ft] >= m.cow_feed_winter[y, ft] - self.base_feed_need_winter['cow'][ft]
-
+            need = self.base_feed_need_winter.get('cow', {}).get(ft, 0)
+            return m.extra_cow_winter[y, ft] >= m.cow_feed_winter[y, ft] - need
         m.extra_cow_winter_rule = Constraint(m.Y, m.FEED, rule=extra_cow_winter_rule)
 
         def extra_cattle_summer_rule(m, y, ft):
-            return m.extra_cattle_summer[y, ft] >= m.cattle_feed_summer[y, ft] - self.base_feed_need_summer['cattle'][
-                ft]
-
+            need = self.base_feed_need_summer.get('cattle', {}).get(ft, 0)
+            return m.extra_cattle_summer[y, ft] >= m.cattle_feed_summer[y, ft] - need
         m.extra_cattle_summer_rule = Constraint(m.Y, m.FEED, rule=extra_cattle_summer_rule)
 
         def extra_cattle_winter_rule(m, y, ft):
-            return m.extra_cattle_winter[y, ft] >= m.cattle_feed_winter[y, ft] - self.base_feed_need_winter['cattle'][
-                ft]
-
+            need = self.base_feed_need_winter.get('cattle', {}).get(ft, 0)
+            return m.extra_cattle_winter[y, ft] >= m.cattle_feed_winter[y, ft] - need
         m.extra_cattle_winter_rule = Constraint(m.Y, m.FEED, rule=extra_cattle_winter_rule)
 
         def extra_pig_summer_rule(m, y, ft):
-            return m.extra_pig_summer[y, ft] >= m.pig_feed_summer[y, ft] - self.base_feed_need_summer['pig'][ft]
-
+            need = self.base_feed_need_summer.get('pig', {}).get(ft, 0)
+            return m.extra_pig_summer[y, ft] >= m.pig_feed_summer[y, ft] - need
         m.extra_pig_summer_rule = Constraint(m.Y, m.FEED, rule=extra_pig_summer_rule)
 
         def extra_pig_winter_rule(m, y, ft):
-            return m.extra_pig_winter[y, ft] >= m.pig_feed_winter[y, ft] - self.base_feed_need_winter['pig'][ft]
-
+            need = self.base_feed_need_winter.get('pig', {}).get(ft, 0)
+            return m.extra_pig_winter[y, ft] >= m.pig_feed_winter[y, ft] - need
         m.extra_pig_winter_rule = Constraint(m.Y, m.FEED, rule=extra_pig_winter_rule)
 
-        # Минимальное кормление
+        # 10. Минимальное кормление
         def min_cow_summer_rule(m, y, ft):
-            return m.cow_feed_summer[y, ft] >= self.base_feed_need_summer['cow'][ft]
-
+            need = self.base_feed_need_summer.get('cow', {}).get(ft, 0)
+            return m.cow_feed_summer[y, ft] >= need
         m.min_cow_summer = Constraint(m.Y, m.FEED, rule=min_cow_summer_rule)
 
         def min_cow_winter_rule(m, y, ft):
-            return m.cow_feed_winter[y, ft] >= self.base_feed_need_winter['cow'][ft]
-
+            need = self.base_feed_need_winter.get('cow', {}).get(ft, 0)
+            return m.cow_feed_winter[y, ft] >= need
         m.min_cow_winter = Constraint(m.Y, m.FEED, rule=min_cow_winter_rule)
 
         def min_cattle_summer_rule(m, y, ft):
-            return m.cattle_feed_summer[y, ft] >= self.base_feed_need_summer['cattle'][ft]
-
+            need = self.base_feed_need_summer.get('cattle', {}).get(ft, 0)
+            return m.cattle_feed_summer[y, ft] >= need
         m.min_cattle_summer = Constraint(m.Y, m.FEED, rule=min_cattle_summer_rule)
 
         def min_cattle_winter_rule(m, y, ft):
-            return m.cattle_feed_winter[y, ft] >= self.base_feed_need_winter['cattle'][ft]
-
+            need = self.base_feed_need_winter.get('cattle', {}).get(ft, 0)
+            return m.cattle_feed_winter[y, ft] >= need
         m.min_cattle_winter = Constraint(m.Y, m.FEED, rule=min_cattle_winter_rule)
 
         def min_pig_summer_rule(m, y, ft):
-            return m.pig_feed_summer[y, ft] >= self.base_feed_need_summer['pig'][ft]
-
+            need = self.base_feed_need_summer.get('pig', {}).get(ft, 0)
+            return m.pig_feed_summer[y, ft] >= need
         m.min_pig_summer = Constraint(m.Y, m.FEED, rule=min_pig_summer_rule)
 
         def min_pig_winter_rule(m, y, ft):
-            return m.pig_feed_winter[y, ft] >= self.base_feed_need_winter['pig'][ft]
-
+            need = self.base_feed_need_winter.get('pig', {}).get(ft, 0)
+            return m.pig_feed_winter[y, ft] >= need
         m.min_pig_winter = Constraint(m.Y, m.FEED, rule=min_pig_winter_rule)
 
-        # Максимальное кормление
+        # 11. Максимальное кормление
         def max_cow_summer_rule(m, y, ft):
-            return m.cow_feed_summer[y, ft] <= self.max_feed['cow'][ft]
-
+            limit = self.max_feed.get('cow', {}).get(ft, 100.0)
+            return m.cow_feed_summer[y, ft] <= limit
         m.max_cow_summer = Constraint(m.Y, m.FEED, rule=max_cow_summer_rule)
 
         def max_cow_winter_rule(m, y, ft):
-            return m.cow_feed_winter[y, ft] <= self.max_feed['cow'][ft]
-
+            limit = self.max_feed.get('cow', {}).get(ft, 100.0)
+            return m.cow_feed_winter[y, ft] <= limit
         m.max_cow_winter = Constraint(m.Y, m.FEED, rule=max_cow_winter_rule)
 
         def max_cattle_summer_rule(m, y, ft):
-            return m.cattle_feed_summer[y, ft] <= self.max_feed['cattle'][ft]
-
+            limit = self.max_feed.get('cattle', {}).get(ft, 80.0)
+            return m.cattle_feed_summer[y, ft] <= limit
         m.max_cattle_summer = Constraint(m.Y, m.FEED, rule=max_cattle_summer_rule)
 
         def max_cattle_winter_rule(m, y, ft):
-            return m.cattle_feed_winter[y, ft] <= self.max_feed['cattle'][ft]
-
+            limit = self.max_feed.get('cattle', {}).get(ft, 80.0)
+            return m.cattle_feed_winter[y, ft] <= limit
         m.max_cattle_winter = Constraint(m.Y, m.FEED, rule=max_cattle_winter_rule)
 
         def max_pig_summer_rule(m, y, ft):
-            return m.pig_feed_summer[y, ft] <= self.max_feed['pig'][ft]
-
+            limit = self.max_feed.get('pig', {}).get(ft, 50.0)
+            return m.pig_feed_summer[y, ft] <= limit
         m.max_pig_summer = Constraint(m.Y, m.FEED, rule=max_pig_summer_rule)
 
         def max_pig_winter_rule(m, y, ft):
-            return m.pig_feed_winter[y, ft] <= self.max_feed['pig'][ft]
-
+            limit = self.max_feed.get('pig', {}).get(ft, 50.0)
+            return m.pig_feed_winter[y, ft] <= limit
         m.max_pig_winter = Constraint(m.Y, m.FEED, rule=max_pig_winter_rule)
 
-        # Продуктивность
+        # 12. Продуктивность
         def milk_summer_rule(m, y):
             gain = sum(
-                self.feed_efficiency['milk'][ft] * (1 - exp(-self.diminishing_beta['milk'] * m.extra_cow_summer[y, ft]))
-                for ft in m.FEED)
+                self.feed_efficiency.get('milk', {}).get(ft, 0) *
+                (1 - exp(-self.diminishing_beta.get('milk', 0.12) * m.extra_cow_summer[y, ft]))
+                for ft in m.FEED
+            )
             return m.milk_yield_summer[y] == self.base_milk_yield + gain * 30
-
         m.milk_summer_rule = Constraint(m.Y, rule=milk_summer_rule)
 
         def milk_winter_rule(m, y):
             gain = sum(
-                self.feed_efficiency['milk'][ft] * (1 - exp(-self.diminishing_beta['milk'] * m.extra_cow_winter[y, ft]))
-                for ft in m.FEED)
-            return m.milk_yield_winter[y] == (self.base_milk_yield + gain * 20) * self.winter_productivity_factor[
-                'milk']
-
+                self.feed_efficiency.get('milk', {}).get(ft, 0) *
+                (1 - exp(-self.diminishing_beta.get('milk', 0.12) * m.extra_cow_winter[y, ft]))
+                for ft in m.FEED
+            )
+            return m.milk_yield_winter[y] == (self.base_milk_yield + gain * 20) * self.winter_productivity_factor.get('milk', 0.82)
         m.milk_winter_rule = Constraint(m.Y, rule=milk_winter_rule)
 
-        # Баланс кормов
+        # 13. Баланс кормов
         def feed_balance_rule(m, y, ft):
             summer_demand = (m.cow_feed_summer[y, ft] * m.cows[y] +
                              m.cattle_feed_summer[y, ft] * m.cattle[y] +
@@ -261,15 +266,14 @@ class BelarusAgroModel:
                              m.pig_feed_winter[y, ft] * m.pigs[y])
             total_demand = (summer_demand * self.summer_days + winter_demand * self.winter_days) / 365
             return m.feed_prod[y, ft] * 1000 >= total_demand / 100
-
         m.feed_balance = Constraint(m.Y, m.FEED, rule=feed_balance_rule)
 
         # ========== ЦЕЛЕВАЯ ФУНКЦИЯ ==========
 
         def objective_rule(m):
-            crop_revenue = sum(self.price[c] * m.production[c, f, y] for c in m.C for f in m.F for y in m.Y)
-            crop_costs = sum(self.cost[c] * m.area[c, f, y] for c in m.C for f in m.F for y in m.Y)
-            fert_costs = sum(self.fert_cost * m.fert[f, y] * self.field_area[f] for f in m.F for y in m.Y)
+            crop_revenue = sum(self.price.get(c, 0) * m.production[c, f, y] for c in m.C for f in m.F for y in m.Y)
+            crop_costs = sum(self.cost.get(c, 0) * m.area[c, f, y] for c in m.C for f in m.F for y in m.Y)
+            fert_costs = sum(self.fert_cost * m.fert[f, y] * self.field_area.get(f, 0) for f in m.F for y in m.Y)
 
             milk_revenue = 0
             for y in m.Y:
@@ -281,12 +285,12 @@ class BelarusAgroModel:
             feed_costs_winter = 0
             for y in m.Y:
                 for ft in m.FEED:
-                    feed_costs_summer += self.feed_price_summer[ft] * (
+                    feed_costs_summer += self.feed_price_summer.get(ft, 0) * (
                             m.cow_feed_summer[y, ft] * m.cows[y] +
                             m.cattle_feed_summer[y, ft] * m.cattle[y] +
                             m.pig_feed_summer[y, ft] * m.pigs[y]
                     ) * self.summer_days
-                    feed_costs_winter += self.feed_price_winter[ft] * (
+                    feed_costs_winter += self.feed_price_winter.get(ft, 0) * (
                             m.cow_feed_winter[y, ft] * m.cows[y] +
                             m.cattle_feed_winter[y, ft] * m.cattle[y] +
                             m.pig_feed_winter[y, ft] * m.pigs[y]
@@ -297,13 +301,9 @@ class BelarusAgroModel:
             cattle_costs = 0
             pig_costs = 0
             for y in m.Y:
-                cow_costs += (self.cow_cost_summer * self.summer_days + self.cow_cost_winter * self.winter_days) / 365 * \
-                             m.cows[y]
-                cattle_costs += (
-                                            self.cattle_cost_summer * self.summer_days + self.cattle_cost_winter * self.winter_days) / 365 * \
-                                m.cattle[y]
-                pig_costs += (self.pig_cost_summer * self.summer_days + self.pig_cost_winter * self.winter_days) / 365 * \
-                             m.pigs[y]
+                cow_costs += (self.cow_cost_summer * self.summer_days + self.cow_cost_winter * self.winter_days) / 365 * m.cows[y]
+                cattle_costs += (self.cattle_cost_summer * self.summer_days + self.cattle_cost_winter * self.winter_days) / 365 * m.cattle[y]
+                pig_costs += (self.pig_cost_summer * self.summer_days + self.pig_cost_winter * self.winter_days) / 365 * m.pigs[y]
 
             winter_energy = 0
             for y in m.Y:
@@ -313,11 +313,8 @@ class BelarusAgroModel:
 
             animal_costs = cow_costs + cattle_costs + pig_costs + winter_energy + feed_costs
 
-            beef_revenue = 0
-            pork_revenue = 0
-            for y in m.Y:
-                beef_revenue += self.beef_price * self.base_beef_yield * m.cattle[y] * 0.9
-                pork_revenue += self.pork_price * self.base_pork_yield * m.pigs[y] * 0.95
+            beef_revenue = sum(self.beef_price * self.base_beef_yield * m.cattle[y] * 0.9 for y in m.Y)
+            pork_revenue = sum(self.pork_price * self.base_pork_yield * m.pigs[y] * 0.95 for y in m.Y)
 
             total = (crop_revenue - crop_costs - fert_costs +
                      milk_revenue + beef_revenue + pork_revenue - animal_costs)

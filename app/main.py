@@ -1,23 +1,17 @@
-# app/run.py
-
 from app.database.engine import session_factory
+from app.modules.repository.mapper import ModelDataMapper
 from app.modules.model.opt_model import BelarusAgroModel
 from app.modules.repository.queries import AgroQueriesRepository
-from app.modules.model.builder import ModelDataBuilder
 
 
 def main():
 
 
     with session_factory() as session:
-        # Создаём репозиторий и строитель данных
         repo = AgroQueriesRepository(session)
-        builder = ModelDataBuilder(repo)
+        mapper = ModelDataMapper(repo)
 
-        # Загружаем данные из активного сценария
-        model_data = builder.build_from_active_scenario()
-
-        # Создаём и запускаем модель
+        model_data = mapper.build_from_active_scenario()
         model = BelarusAgroModel(model_data)
 
         if model.solve():
