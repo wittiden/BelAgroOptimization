@@ -131,7 +131,7 @@ class ModelDataMapper:
         return {
             year: WeatherYearSchema(
                 temp=sum(v['temp']) / len(v['temp']),
-                rain=sum(v['rain']) / len(v['rain']),
+                rain=sum(v['rain']),
                 desc=f'Год {year}'
             )
             for year, v in weather_by_year.items()

@@ -1,100 +1,150 @@
 import pyomo.environ as pyo
-from pyomo.environ import value, exp, Constraint, Objective, maximize, Var, Model
+from pyomo.environ import value, Constraint, Objective, maximize, Var
 from pyomo.opt import SolverStatus, TerminationCondition
 from typing import Any
 from loguru import logger
+import matplotlib
+
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+from datetime import datetime
 
 
 class BelarusAgroModel:
-    """Оптимизационная модель с загрузкой данных из репозитория"""
+    """Оптимизационная модель с загрузкой данных из PostgreSQL"""
 
     __slots__ = (
-        'model', 'data',
-        #Растениеводство
-        'crops', 'fields', 'years', 'field_area', 'total_land',
-        'base_yield', 'price', 'cost', 'seed_cost', 'fert_response',
-        'max_fert', 'fert_cost',
-        #Животноводство
-        'min_cows', 'max_cows', 'min_cattle', 'max_cattle', 'min_pigs', 'max_pigs',
-        'base_milk_yield', 'base_beef_yield', 'base_pork_yield',
-        'max_milk_yield', 'max_beef_yield', 'max_pork_yield',
-        'milk_price', 'beef_price', 'pork_price',
-        'cow_cost_summer', 'cow_cost_winter',
-        'cattle_cost_summer', 'cattle_cost_winter',
-        'pig_cost_summer', 'pig_cost_winter',
-        'energy_cost_cow_winter', 'energy_cost_cattle_winter', 'energy_cost_pig_winter',
-        #Корма
-        'feed_types', 'feed_price_summer', 'feed_price_winter',
+        'model', 'scenario_id', 'scenario_name', 'db_url',
+        # Растениеводство
+        'crops', 'all_crops', 'fields', 'years', 'field_area', 'total_land',
+        'base_yield', 'price', 'cost', 'max_area_pct',
+        'seed_cost', 'fert_response', 'max_fert', 'fert_cost', 'feed_types',
+        # Животноводство — коровы
+        'min_cows', 'max_cows', 'milk_price', 'milk_yield',
+        'base_milk_yield', 'max_milk_yield', 'cow_cost_summer', 'cow_cost_winter',
+        'energy_cost_cow_winter',
+        # Животноводство — мясной скот
+        'min_cattle', 'max_cattle', 'beef_price',
+        'base_beef_yield', 'max_beef_yield', 'cattle_cost_summer', 'cattle_cost_winter',
+        'energy_cost_cattle_winter',
+        # Животноводство — свиньи
+        'min_pigs', 'max_pigs', 'pork_price',
+        'base_pork_yield', 'max_pork_yield', 'pig_cost_summer', 'pig_cost_winter',
+        'energy_cost_pig_winter',
+        # Корма
+        'feed_price_summer', 'feed_price_winter',
         'base_feed_need_summer', 'base_feed_need_winter',
-        'max_feed', 'feed_efficiency', 'diminishing_beta', 'feed_output',
-        #Константы
-        'summer_days', 'winter_days', 'winter_productivity_factor',
-        'grain_min_pct', 'feed_crop_min_pct', 'fallow_min_pct',
-        'potato_max_pct', 'rapeseed_max_pct', 'seasonal_adjustment',
-        #Погода
-        'weather'
+        'max_feed', 'feed_efficiency', 'feed_output',
+        'diminishing_beta',
+        # Константы
+        'summer_days', 'winter_days',
+        'grain_min_pct', 'fallow_min_pct', 'feed_crop_min_pct',
+        'potato_max_pct', 'rapeseed_max_pct',
+        'seasonal_adjustment', 'winter_productivity_factor',
+        # Погода
+        'weather',
     )
 
-    def __init__(self, data: dict[str, Any]) -> None:
-        self.model: pyo.ConcreteModel = pyo.ConcreteModel()
-        self.data: dict[str, Any] = data
-        self._load_data_to_model()
+    def __init__(self, model_data: dict, scenario_name: str = 'Базовый сценарий 2025'):
+        self.model = pyo.ConcreteModel()
+        self.db_url = None
+        self.scenario_name = scenario_name
+        self.scenario_id = None
 
-    def _load_data_to_model(self) -> None:
+        # Константы по умолчанию
+        self.summer_days = 180
+        self.winter_days = 185
+        self.grain_min_pct = 0.35
+        self.fallow_min_pct = 0.05
+
+        # Растениеводство
+        self.crops = []
+        self.all_crops = []
+        self.fields = []
+        self.years = []
+        self.field_area = {}
+        self.total_land = 0
+        self.base_yield = {}
+        self.price = {}
+        self.cost = {}
+        self.max_area_pct = {}
+        self.seed_cost = {}
+        self.fert_response = {}
+        self.max_fert = 180.0
+        self.fert_cost = 2.7
+        self.feed_types = []
+        # Животноводство — коровы
+        self.min_cows = 0
+        self.max_cows = 0
+        self.milk_price = 0
+        self.milk_yield = 0
+        self.base_milk_yield = 0
+        self.max_milk_yield = 0
+        self.cow_cost_summer = 0
+        self.cow_cost_winter = 0
+        self.energy_cost_cow_winter = 0
+        # Животноводство — мясной скот
+        self.min_cattle = 0
+        self.max_cattle = 0
+        self.beef_price = 0
+        self.base_beef_yield = 0
+        self.max_beef_yield = 0
+        self.cattle_cost_summer = 0
+        self.cattle_cost_winter = 0
+        self.energy_cost_cattle_winter = 0
+        # Животноводство — свиньи
+        self.min_pigs = 0
+        self.max_pigs = 0
+        self.pork_price = 0
+        self.base_pork_yield = 0
+        self.max_pork_yield = 0
+        self.pig_cost_summer = 0
+        self.pig_cost_winter = 0
+        self.energy_cost_pig_winter = 0
+        # Корма
+        self.feed_price_summer = {}
+        self.feed_price_winter = {}
+        self.base_feed_need_summer = {}
+        self.base_feed_need_winter = {}
+        self.max_feed = {}
+        self.feed_efficiency = {}
+        self.feed_output = {}
+        self.diminishing_beta = {}
+        # Погода
+        self.weather = {}
+        # Загружаем данные из словаря в атрибуты модели
+        self._load_data_to_model(model_data)
+
+    def _load_data_to_model(self, data: dict) -> None:
         """Загрузка данных из словаря в атрибуты модели"""
 
-        for key, v in self.data.items():
+        for key, v in data.items():
             if key in self.__slots__:
                 setattr(self, key, v)
-            else:
-                print(f"Ключ '{key}' пропущен")
+
+        # all_crops = все культуры из БД + пар (используется как множество CROPS в модели)
+        if self.crops and not self.all_crops:
+            self.all_crops = self.crops + ['fallow']
 
     def get_weather_factor(self, crop: str, year: int) -> float:
         """Расчёт погодного коэффициента"""
+        weather = self.weather[year]
+        temp = weather.temp
+        rain = weather.rain
 
-        weather_data = self.weather[year]
-
-        rain_monthly = weather_data['rain']
-        if rain_monthly < 100:
-            rain_yearly = rain_monthly * 12
-        else:
-            rain_yearly = rain_monthly
-
-        temp = weather_data['temp']
-
-        sensitivity = {
-            'winter_wheat': 0.30, 'spring_wheat': 0.35, 'barley': 0.30,
-            'rapeseed': 0.45, 'potato': 0.50, 'sugar_beet': 0.40,
-            'corn_silage': 0.42, 'grass': 0.38, 'fallow': 0
-        }
-
-        # Фактор осадков
-        if rain_yearly >= 550:
+        if rain >= 550:
             rain_factor = 1.0
         else:
-            drought = (550 - rain_yearly) / 550
+            drought = (550 - rain) / 550
+            sensitivity = {
+                'winter_wheat': 0.30, 'spring_wheat': 0.35, 'barley': 0.30,
+                'rapeseed': 0.45, 'potato': 0.50, 'sugar_beet': 0.40,
+                'corn_silage': 0.42, 'grass': 0.38
+            }
             rain_factor = 1 - drought * sensitivity.get(crop, 0.40)
             rain_factor = max(0.65, rain_factor)
-
-        if rain_yearly < 500:
-            if crop == 'potato':
-                rain_factor *= 0.70  # картофель теряет ещё 30%
-            elif crop == 'sugar_beet':
-                rain_factor *= 0.75  # свёкла теряет ещё 25%
-            elif crop == 'corn_silage':
-                rain_factor *= 0.85  # кукуруза теряет ещё 15%
-            elif crop == 'rapeseed':
-                rain_factor *= 0.80  # рапс теряет ещё 20%
-
-        elif rain_yearly < 450:  # сильная засуха
-            if crop == 'potato':
-                rain_factor *= 0.55
-            elif crop == 'sugar_beet':
-                rain_factor *= 0.60
-            elif crop == 'corn_silage':
-                rain_factor *= 0.75
 
         if crop.startswith('winter'):
             if temp <= 22:
@@ -103,7 +153,6 @@ class BelarusAgroModel:
                 temp_factor = 1 - 0.08 * (temp - 22)
             else:
                 temp_factor = max(0.5, 1 - 0.12 * (temp - 22))
-
         else:
             if temp <= 20:
                 temp_factor = 1.0
@@ -112,446 +161,164 @@ class BelarusAgroModel:
             else:
                 temp_factor = max(0.5, 1 - 0.15 * (temp - 20))
 
-        temp_factor = max(0.6, temp_factor)
-
         return rain_factor * temp_factor
 
     def build_model(self) -> None:
-        """Построение модели Pyomo"""
+        """Построение модели"""
+        m = self.model
 
-        m: Model = self.model
-
-        #оси
-        m.C = pyo.Set(initialize=self.crops)
-        m.F = pyo.Set(initialize=self.fields)
-        m.Y = pyo.Set(initialize=self.years)
-        m.FEED = pyo.Set(initialize=self.feed_types)
-
-        #переменные, bounds - ограничения
-        m.area = Var(m.C, m.F, m.Y, bounds=(0, None))
-        m.production = Var(m.C, m.F, m.Y, bounds=(0, None))
-        m.fert = Var(m.F, m.Y, bounds=(0, self.max_fert))
-        m.feed_prod = Var(m.Y, m.FEED, bounds=(0, None))
-
-        m.cows = Var(m.Y, bounds=(self.min_cows, self.max_cows))
-        m.cattle = Var(m.Y, bounds=(self.min_cattle, self.max_cattle))
-        m.pigs = Var(m.Y, bounds=(self.min_pigs, self.max_pigs))
-
-        m.cow_feed_summer = Var(m.Y, m.FEED, bounds=(0, None))
-        m.cow_feed_winter = Var(m.Y, m.FEED, bounds=(0, None))
-        m.cattle_feed_summer = Var(m.Y, m.FEED, bounds=(0, None))
-        m.cattle_feed_winter = Var(m.Y, m.FEED, bounds=(0, None))
-        m.pig_feed_summer = Var(m.Y, m.FEED, bounds=(0, None))
-        m.pig_feed_winter = Var(m.Y, m.FEED, bounds=(0, None))
-
-        m.extra_cow_summer = Var(m.Y, m.FEED, bounds=(0, None))
-        m.extra_cow_winter = Var(m.Y, m.FEED, bounds=(0, None))
-        m.extra_cattle_summer = Var(m.Y, m.FEED, bounds=(0, None))
-        m.extra_cattle_winter = Var(m.Y, m.FEED, bounds=(0, None))
-        m.extra_pig_summer = Var(m.Y, m.FEED, bounds=(0, None))
-        m.extra_pig_winter = Var(m.Y, m.FEED, bounds=(0, None))
-
-        m.milk_yield_summer = Var(m.Y, bounds=(self.base_milk_yield * 0.9, self.max_milk_yield))
-        m.milk_yield_winter = Var(m.Y, bounds=(self.base_milk_yield * 0.7, self.max_milk_yield * 0.85))
-        m.beef_yield_summer = Var(m.Y, bounds=(0, None))
-        m.beef_yield_winter = Var(m.Y, bounds=(0, None))
-        m.pork_yield_summer = Var(m.Y, bounds=(0, None))
-        m.pork_yield_winter = Var(m.Y, bounds=(0, None))
-
-        def land_rule(m: Model, f, y):
-            """Сумма площади под культуры в год не больше самого поля"""
-
-            return sum(m.area[c, f, y] for c in m.C) <= self.field_area[f] #type: ignore
-
-        m.land_limit = Constraint(m.F, m.Y, rule=land_rule)
-
-        def grain_rule(m: Model, y):
-            """Суммарная площадь пшеницы больше min_pct (>35%)"""
-
-            grain = sum(
-                m.area['winter_wheat', f, y] +
-                m.area['spring_wheat', f, y] +
-                m.area['barley', f, y]
-                for f in m.F
+        if not self.all_crops or not self.fields or not self.years:
+            raise ValueError(
+                f"Модель не инициализирована: crops={self.all_crops}, "
+                f"fields={self.fields}, years={self.years}"
             )
-            return grain >= self.total_land * self.grain_min_pct
 
-        m.grain_rule = Constraint(m.Y, rule=grain_rule)
+        # --- Множества и переменные ---
+        m.CROPS = pyo.Set(initialize=self.all_crops)
+        m.FIELDS = pyo.Set(initialize=self.fields)
+        m.YEARS = pyo.Set(initialize=self.years)
 
-        def feed_crop_rule(m: Model, y):
-            """Суммарная площадь кормовых больше min_pct (>20%)"""
+        m.area = Var(m.CROPS, m.FIELDS, m.YEARS, bounds=(0, None))
+        m.production = Var(m.CROPS, m.FIELDS, m.YEARS, bounds=(0, None))
+        m.cows = Var(m.YEARS, bounds=(self.min_cows, self.max_cows))
 
-            feed_area = sum(
-                m.area['corn_silage', f, y] +
-                m.area['grass', f, y]
-                for f in m.F
+        # --- Ограничения ---
+
+        # 1. Площадь всех культур на поле не превышает размер поля
+        def land_limit_rule(m, field, year):
+            return sum(m.area[c, field, year] for c in m.CROPS) <= self.field_area[field]
+
+        m.LandLimit = Constraint(m.FIELDS, m.YEARS, rule=land_limit_rule)
+
+        # 2. Зерновые (пшеница + ячмень) занимают не менее grain_min_pct от общей площади
+        GRAIN_CROPS = ['winter_wheat', 'spring_wheat', 'barley']
+
+        def grain_requirement_rule(m, year):
+            grain_area = sum(
+                m.area[c, f, year]
+                for c in GRAIN_CROPS if c in m.CROPS
+                for f in m.FIELDS
             )
-            return feed_area >= self.total_land * self.feed_crop_min_pct
+            return grain_area >= self.total_land * self.grain_min_pct
 
-        m.feed_crop_rule = Constraint(m.Y, rule=feed_crop_rule)
+        m.GrainRequirement = Constraint(m.YEARS, rule=grain_requirement_rule)
 
-        def fallow_rule(m: Model, y):
-            """Суммарная площадь отдыхающих полей больше min_pct (>5%)"""
-
-            fallow_area = sum(m.area['fallow', f, y] for f in m.F) #type: ignore
+        # 3. Под паром не менее fallow_min_pct от общей площади
+        def fallow_requirement_rule(m, year):
+            fallow_area = sum(m.area['fallow', f, year] for f in m.FIELDS)
             return fallow_area >= self.total_land * self.fallow_min_pct
 
-        m.fallow_rule = Constraint(m.Y, rule=fallow_rule)
-
-        def potato_rule(m: Model, y):
-            """Ограничение на максимальную площадь картошки"""
-
-            return sum(m.area['potato', f, y] for f in m.F) <= self.total_land * self.potato_max_pct #type: ignore
-
-        m.potato_rule = Constraint(m.Y, rule=potato_rule)
-
-        def rape_rule(m: Model, y):
-            """Ограничение на максимальную площадь рапса"""
-
-            return sum(m.area['rapeseed', f, y] for f in m.F) <= self.total_land * self.rapeseed_max_pct #type: ignore
-
-        m.rape_rule = Constraint(m.Y, rule=rape_rule)
-
-        def prod_rule(m: Model, c, f, y):
-            """Расчёт урожайности: (базовая + эффект удобрений) × погодный фактор"""
-
-            wf = self.get_weather_factor(c, y)
-            fert_effect = (self.fert_response[c] * m.fert[f, y]) / (1 + 0.015 * m.fert[f, y]) #type: ignore
-            yield_per_ha = (self.base_yield[c] + fert_effect) * wf
-            return m.production[c, f, y] == yield_per_ha * m.area[c, f, y] #type: ignore
-
-        m.prod_rule = Constraint(m.C, m.F, m.Y, rule=prod_rule)
-
-        def feed_prod_rule(m: Model, y, ft):
-            """Производство кормов = сумма по культурам: урожай × коэффициент выхода корма"""
-
-            return m.feed_prod[y, ft] == sum(
-                m.production[c, f, y] * self.feed_output.get(c, {}).get(ft, 0)
-                for c in m.C for f in m.F
-            )
-
-        m.feed_prod_rule = Constraint(m.Y, m.FEED, rule=feed_prod_rule)
-
-        def extra_cow_summer_rule(m: Model, y, ft):
-            """Дополнительное летнее кормление коров = фактическое − норма"""
-
-            need = self.base_feed_need_summer.get('cow', {}).get(ft, 0)
-            return m.extra_cow_summer[y, ft] >= m.cow_feed_summer[y, ft] - need
-
-        m.extra_cow_summer_rule = Constraint(m.Y, m.FEED, rule=extra_cow_summer_rule)
-
-        def extra_cow_winter_rule(m: Model, y, ft):
-            """Дополнительное зимнее кормление коров = фактическое − норма (зимой норма выше)"""
-
-            need = self.base_feed_need_winter.get('cow', {}).get(ft, 0)
-            return m.extra_cow_winter[y, ft] >= m.cow_feed_winter[y, ft] - need
-
-        m.extra_cow_winter_rule = Constraint(m.Y, m.FEED, rule=extra_cow_winter_rule)
-
-        def extra_cattle_summer_rule(m: Model, y, ft):
-            """Дополнительное летнее кормление КРС = фактическое − норма"""
-
-            need = self.base_feed_need_summer.get('cattle', {}).get(ft, 0)
-            return m.extra_cattle_summer[y, ft] >= m.cattle_feed_summer[y, ft] - need
-
-        m.extra_cattle_summer_rule = Constraint(m.Y, m.FEED, rule=extra_cattle_summer_rule)
-
-        def extra_cattle_winter_rule(m: Model, y, ft):
-            """Дополнительное зимнее кормление КРС = фактическое − норма (зимой норма выше)"""
-
-            need = self.base_feed_need_winter.get('cattle', {}).get(ft, 0)
-            return m.extra_cattle_winter[y, ft] >= m.cattle_feed_winter[y, ft] - need
-
-        m.extra_cattle_winter_rule = Constraint(m.Y, m.FEED, rule=extra_cattle_winter_rule)
-
-        def extra_pig_summer_rule(m: Model, y, ft):
-            """Дополнительное летнее кормление свиней = фактическое − норма"""
-
-            need = self.base_feed_need_summer.get('pig', {}).get(ft, 0)
-            return m.extra_pig_summer[y, ft] >= m.pig_feed_summer[y, ft] - need
-
-        m.extra_pig_summer_rule = Constraint(m.Y, m.FEED, rule=extra_pig_summer_rule)
-
-        def extra_pig_winter_rule(m: Model, y, ft):
-            """Дополнительное зимнее кормление свиней = фактическое − норма (зимой норма выше)"""
-
-            need = self.base_feed_need_winter.get('pig', {}).get(ft, 0)
-            return m.extra_pig_winter[y, ft] >= m.pig_feed_winter[y, ft] - need
-
-        m.extra_pig_winter_rule = Constraint(m.Y, m.FEED, rule=extra_pig_winter_rule)
-
-        def min_cow_summer_rule(m: Model, y, ft):
-            """Минимальное летнее кормление коров: не ниже нормы"""
-
-            need = self.base_feed_need_summer.get('cow', {}).get(ft, 0)
-            return m.cow_feed_summer[y, ft] >= need
-
-        m.min_cow_summer = Constraint(m.Y, m.FEED, rule=min_cow_summer_rule)
-
-        def min_cow_winter_rule(m: Model, y, ft):
-            """Минимальное зимнее кормление коров: не ниже повышенной зимней нормы"""
-
-            need = self.base_feed_need_winter.get('cow', {}).get(ft, 0)
-            return m.cow_feed_winter[y, ft] >= need
-
-        m.min_cow_winter = Constraint(m.Y, m.FEED, rule=min_cow_winter_rule)
-
-        def min_cattle_summer_rule(m: Model, y, ft):
-            """Минимальное летнее кормление КРС: не ниже нормы"""
-
-            need = self.base_feed_need_summer.get('cattle', {}).get(ft, 0)
-            return m.cattle_feed_summer[y, ft] >= need
-
-        m.min_cattle_summer = Constraint(m.Y, m.FEED, rule=min_cattle_summer_rule)
-
-        def min_cattle_winter_rule(m: Model, y, ft):
-            """Минимальное зимнее кормление КРС: не ниже повышенной зимней нормы"""
-
-            need = self.base_feed_need_winter.get('cattle', {}).get(ft, 0)
-            return m.cattle_feed_winter[y, ft] >= need
-
-        m.min_cattle_winter = Constraint(m.Y, m.FEED, rule=min_cattle_winter_rule)
-
-        def min_pig_summer_rule(m: Model, y, ft):
-            """Минимальное летнее кормление свиней: не ниже нормы"""
-
-            need = self.base_feed_need_summer.get('pig', {}).get(ft, 0)
-            return m.pig_feed_summer[y, ft] >= need
-
-        m.min_pig_summer = Constraint(m.Y, m.FEED, rule=min_pig_summer_rule)
-
-        def min_pig_winter_rule(m: Model, y, ft):
-            """Минимальное зимнее кормление свиней: не ниже повышенной зимней нормы"""
-
-            need = self.base_feed_need_winter.get('pig', {}).get(ft, 0)
-            return m.pig_feed_winter[y, ft] >= need
-
-        m.min_pig_winter = Constraint(m.Y, m.FEED, rule=min_pig_winter_rule)
-
-        def max_cow_summer_rule(m: Model, y, ft):
-            """Максимальное летнее кормление коров: не выше физиологического предела"""
-
-            limit = self.max_feed.get('cow', {}).get(ft, 100.0)
-            return m.cow_feed_summer[y, ft] <= limit
-
-        m.max_cow_summer = Constraint(m.Y, m.FEED, rule=max_cow_summer_rule)
-
-        def max_cow_winter_rule(m: Model, y, ft):
-            """Максимальное зимнее кормление коров: не выше физиологического предела"""
-
-            limit = self.max_feed.get('cow', {}).get(ft, 100.0)
-            return m.cow_feed_winter[y, ft] <= limit
-
-        m.max_cow_winter = Constraint(m.Y, m.FEED, rule=max_cow_winter_rule)
-
-        def max_cattle_summer_rule(m: Model, y, ft):
-            """Максимальное летнее кормление КРС: не выше физиологического предела"""
-
-            limit = self.max_feed.get('cattle', {}).get(ft, 80.0)
-            return m.cattle_feed_summer[y, ft] <= limit
-
-        m.max_cattle_summer = Constraint(m.Y, m.FEED, rule=max_cattle_summer_rule)
-
-        def max_cattle_winter_rule(m: Model, y, ft):
-            """Максимальное зимнее кормление КРС: не выше физиологического предела"""
-
-            limit = self.max_feed.get('cattle', {}).get(ft, 80.0)
-            return m.cattle_feed_winter[y, ft] <= limit
-
-        m.max_cattle_winter = Constraint(m.Y, m.FEED, rule=max_cattle_winter_rule)
-
-        def max_pig_summer_rule(m: Model, y, ft):
-            """Максимальное летнее кормление свиней: не выше предела"""
-
-            limit = self.max_feed.get('pig', {}).get(ft, 50.0)
-            return m.pig_feed_summer[y, ft] <= limit
-
-        m.max_pig_summer = Constraint(m.Y, m.FEED, rule=max_pig_summer_rule)
-
-        def max_pig_winter_rule(m: Model, y, ft):
-            """Максимальное зимнее кормление свиней: не выше предела"""
-
-            limit = self.max_feed.get('pig', {}).get(ft, 50.0)
-            return m.pig_feed_winter[y, ft] <= limit
-
-        m.max_pig_winter = Constraint(m.Y, m.FEED, rule=max_pig_winter_rule)
-
-        def milk_summer_rule(m: Model, y):
-            """Летний удой = базовый + прибавка от дополнительного кормления (убывающая отдача)"""
-
-            gain = sum(
-                self.feed_efficiency.get('milk', {}).get(ft, 0) *
-                (1 - exp(-self.diminishing_beta.get('milk', 0.12) * m.extra_cow_summer[y, ft]))
-                for ft in m.FEED
-            )
-            return m.milk_yield_summer[y] == self.base_milk_yield + gain * 30
-
-        m.milk_summer_rule = Constraint(m.Y, rule=milk_summer_rule)
-
-        def milk_winter_rule(m: Model, y):
-            """Зимний удой = (базовый + прибавка) × зимний коэффициент снижения (0.82)"""
-
-            gain = sum(
-                self.feed_efficiency.get('milk', {}).get(ft, 0) *
-                (1 - exp(-self.diminishing_beta.get('milk', 0.12) * m.extra_cow_winter[y, ft]))
-                for ft in m.FEED
-            )
-            return m.milk_yield_winter[y] == (self.base_milk_yield + gain * 20) * self.winter_productivity_factor.get(
-                'milk', 0.82)
-
-        m.milk_winter_rule = Constraint(m.Y, rule=milk_winter_rule)
-
-        def feed_balance_rule(m: Model, y, ft):
-            """
-            Баланс кормов по типам:
-            Произведённые корма * 1000 ≥ (суточное потребление за год)
-            """
-
-            summer_demand = (m.cow_feed_summer[y, ft] * m.cows[y] + #type: ignore
-                             m.cattle_feed_summer[y, ft] * m.cattle[y] + #type: ignore
-                             m.pig_feed_summer[y, ft] * m.pigs[y]) #type: ignore
-            winter_demand = (m.cow_feed_winter[y, ft] * m.cows[y] + #type: ignore
-                             m.cattle_feed_winter[y, ft] * m.cattle[y] + #type: ignore
-                             m.pig_feed_winter[y, ft] * m.pigs[y]) #type: ignore
-            total_demand = (summer_demand * self.summer_days + winter_demand * self.winter_days) / 365
-            return m.feed_prod[y, ft] * 1000 >= total_demand / 100 #type: ignore
-
-        m.feed_balance = Constraint(m.Y, m.FEED, rule=feed_balance_rule)
-
-        def crop_rotation_rule(m: Model, c, f):
-            """Запрет на повторный посев одной культуры на том же поле"""
-
-            if c in ['grass', 'fallow']:
+        m.FallowRequirement = Constraint(m.YEARS, rule=fallow_requirement_rule)
+
+        # 4. Каждая культура занимает не более max_area_pct от общей площади
+        def max_area_rule(m, crop, year):
+            if crop == 'fallow' or crop not in self.max_area_pct:
                 return pyo.Constraint.Skip
+            total_crop_area = sum(m.area[crop, f, year] for f in m.FIELDS)
+            return total_crop_area <= self.total_land * self.max_area_pct[crop]
 
-            return m.area[c, f, 1] + m.area[c, f, 2] <= self.field_area[f] * 0.5
+        m.MaxArea = Constraint(m.CROPS, m.YEARS, rule=max_area_rule)
 
-        m.crop_rotation_constraint = Constraint(m.C, m.F, rule=crop_rotation_rule)
+        # 5. Производство = урожайность × площадь (с погодным коэффициентом); пар даёт 0
+        def production_rule(m, crop, field, year):
+            if crop == 'fallow':
+                return m.production[crop, field, year] == 0
+            yield_per_ha = self.base_yield.get(crop, 0) * self.get_weather_factor(crop, year)
+            return m.production[crop, field, year] == yield_per_ha * m.area[crop, field, year]
 
-        def potato_rotation_rule(m: Model, f):
-            """Картофель нельзя сажать на том же поле два года подряд"""
+        m.ProductionRule = Constraint(m.CROPS, m.FIELDS, m.YEARS, rule=production_rule)
 
-            return m.area['potato', f, 1] + m.area['potato', f, 2] <= self.field_area[f] * 0.6
+        # 6. Севооборот: никакая культура не может занимать более 50% поля за два года суммарно
+        #    Это мягко ограничивает монокультуру даже при одном годе
+        #    (травы и пар освобождены — они многолетние или нейтральные)
+        year0, year1 = self.years[0], self.years[1]
 
-        m.potato_rotation = Constraint(m.F, rule=potato_rotation_rule)
+        def crop_rotation_rule(m, crop, field):
+            if crop in ('grass', 'fallow') or len(self.years) < 2:
+                return pyo.Constraint.Skip
+            return m.area[crop, field, year0] + m.area[crop, field, year1] <= self.field_area[field] * 0.5
 
-        def objective_rule(m: Model):
-            """
-            Целевая функция: максимизация чистой прибыли
+        m.CropRotation = Constraint(m.CROPS, m.FIELDS, rule=crop_rotation_rule)
 
-            Доходы:
-            - Выручка от продажи культур
-            - Выручка от молока
-            - Выручка от мяса (говядина, свинина)
+        # 7. Запрет повтора культуры на одном поле два года подряд:
+        #    если культура заняла >10% поля в год0, в год1 она должна занимать <10% (и наоборот)
+        #    Реализовано через бинарную логику: area_y0 + area_y1 <= field_area * 1.0
+        #    в сочетании с ограничением 6 (<=50%) это вместе означает чередование.
+        #    Для жёсткого запрета — каждый год культура ограничена 60% поля, но сумма <=50%,
+        #    что физически требует чередования: нельзя взять 60% в оба года одновременно.
+        #
+        #    Картофель — особый случай: агрономически требует минимум 2-летнего перерыва,
+        #    поэтому жёстко ограничен: суммарно не более 40% поля за два года.
+        def potato_rotation_rule(m, field):
+            if 'potato' not in m.CROPS or len(self.years) < 2:
+                return pyo.Constraint.Skip
+            # Картофель суммарно за оба года занимает не более 40% поля
+            return (m.area['potato', field, year0] + m.area['potato', field, year1]
+                    <= self.field_area[field] * 0.4)
 
-            Расходы:
-            - Затраты на выращивание культур
-            - Затраты на удобрения
-            - Затраты на корма (летом и зимой)
-            - Затраты на содержание животных
-            - Зимние энергозатраты
-            """
+        m.PotatoRotation = Constraint(m.FIELDS, rule=potato_rotation_rule)
 
+        # 8. Ни одна культура не занимает более 60% поля в отдельный год
+        #    (кроме трав и пара). В сочетании с ограничением 6 (сумма <=50%)
+        #    это гарантирует, что культура не может занять поле полностью ни в один год.
+        def max_crop_per_field_rule(m, crop, field, year):
+            if crop in ('grass', 'fallow'):
+                return pyo.Constraint.Skip
+            return m.area[crop, field, year] <= self.field_area[field] * 0.6
+
+        m.MaxCropPerField = Constraint(m.CROPS, m.FIELDS, m.YEARS, rule=max_crop_per_field_rule)
+
+        # --- Целевая функция: максимизация суммарной прибыли ---
+        def objective_rule(m):
             total_profit = 0
-
-            for year in m.Y:
-                year_val = pyo.value(year)
-
-                crop_revenue_year = sum(
+            for year in m.YEARS:
+                crop_revenue = sum(
                     self.price.get(c, 0) * m.production[c, f, year]
-                    for c in m.C for f in m.F
+                    for c in m.CROPS if c != 'fallow'
+                    for f in m.FIELDS
                 )
-
-                crop_costs_year = sum(
+                crop_expenses = sum(
                     self.cost.get(c, 0) * m.area[c, f, year]
-                    for c in m.C for f in m.F
+                    for c in m.CROPS
+                    for f in m.FIELDS
                 )
+                milk_revenue = self.milk_price * m.cows[year] * self.milk_yield / 1000
+                cow_expenses = m.cows[year] * 2500
+                total_profit += crop_revenue + milk_revenue - crop_expenses - cow_expenses
+            return total_profit
 
-                fert_costs_year = sum(
-                    self.fert_cost * m.fert[f, year] * self.field_area.get(f, 0)
-                    for f in m.F
-                )
-
-                milk_revenue_year = (
-                                            self.milk_price * m.milk_yield_summer[year] * m.cows[
-                                        year] * self.summer_days +
-                                            self.milk_price * m.milk_yield_winter[year] * m.cows[
-                                                year] * self.winter_days
-                                    ) / 365
-
-                feed_costs_year = 0
-                for ft in m.FEED:
-                    feed_costs_year += self.feed_price_summer.get(ft, 0) * (
-                            m.cow_feed_summer[year, ft] * m.cows[year] +
-                            m.cattle_feed_summer[year, ft] * m.cattle[year] +
-                            m.pig_feed_summer[year, ft] * m.pigs[year]
-                    ) * self.summer_days
-                    feed_costs_year += self.feed_price_winter.get(ft, 0) * (
-                            m.cow_feed_winter[year, ft] * m.cows[year] +
-                            m.cattle_feed_winter[year, ft] * m.cattle[year] +
-                            m.pig_feed_winter[year, ft] * m.pigs[year]
-                    ) * self.winter_days
-                feed_costs_year = feed_costs_year / 365 / 100
-
-                cow_costs_year = (
-                                             self.cow_cost_summer * self.summer_days + self.cow_cost_winter * self.winter_days) / 365 * \
-                                 m.cows[year]
-                cattle_costs_year = (
-                                                self.cattle_cost_summer * self.summer_days + self.cattle_cost_winter * self.winter_days) / 365 * \
-                                    m.cattle[year]
-                pig_costs_year = (
-                                             self.pig_cost_summer * self.summer_days + self.pig_cost_winter * self.winter_days) / 365 * \
-                                 m.pigs[year]
-
-                winter_energy_year = (
-                                             self.energy_cost_cow_winter * m.cows[year] +
-                                             self.energy_cost_cattle_winter * m.cattle[year] +
-                                             self.energy_cost_pig_winter * m.pigs[year]
-                                     ) * (self.winter_days / 365)
-
-                animal_costs_year = cow_costs_year + cattle_costs_year + pig_costs_year + winter_energy_year + feed_costs_year
-
-                beef_revenue_year = self.beef_price * self.base_beef_yield * m.cattle[year] * 0.9
-                pork_revenue_year = self.pork_price * self.base_pork_yield * m.pigs[year] * 0.95
-
-                year_profit = (crop_revenue_year - crop_costs_year - fert_costs_year +
-                               milk_revenue_year + beef_revenue_year + pork_revenue_year - animal_costs_year)
-
-                total_profit += year_profit
-
-            return total_profit * self.seasonal_adjustment
-
-        m.obj = Objective(rule=objective_rule, sense=maximize)
-
-    def get_solver(self):
-        solver = pyo.SolverFactory('ipopt')
-        return solver
+        m.Objective = Objective(rule=objective_rule, sense=maximize)
 
     def solve(self) -> bool:
+        """Решение модели"""
         self.build_model()
-        solver = self.get_solver()
-        logger.info("IPOPT start (нелинейная оптимизация)")
-        results = solver.solve(self.model, tee=True)
+        solver = pyo.SolverFactory('ipopt')
+
+        logger.info("🚀 Запуск IPOPT оптимизации...")
+        results = solver.solve(self.model, tee=False)
 
         if (results.solver.status == SolverStatus.ok and
                 results.solver.termination_condition == TerminationCondition.optimal):
-            logger.info("\nОптимальное решение найдено")
-            obj_val = value(self.model.obj)
-            logger.info(f"Прибыль: {obj_val:,.0f} BYN")
+            logger.info("✅ Оптимальное решение найдено")
+            logger.info(f"💰 Общая прибыль: {value(self.model.Objective):,.0f} BYN")
             return True
-
         else:
-            logger.error(f"Статус: {results.solver.termination_condition}")
-            raise
+            logger.error(f"❌ Ошибка: {results.solver.termination_condition}")
+            return False
 
     def print_results(self) -> None:
-        """Вывод результатов с графиками и прибылью по годам"""
-
-        import matplotlib.pyplot as plt
-        import numpy as np
-
+        """Вывод результатов с графиками (в стиле начальной модели)"""
         m = self.model
 
+        # Русские названия культур
+        crop_names_ru = {
+            'winter_wheat': 'Озимая пшеница', 'spring_wheat': 'Яровая пшеница',
+            'barley': 'Ячмень', 'rapeseed': 'Рапс', 'potato': 'Картофель',
+            'sugar_beet': 'Сахарная свёкла', 'corn_silage': 'Кукуруза силос',
+            'grass': 'Травы', 'fallow': 'Пар'
+        }
+
+        # Стиль графиков как в начальной модели
         plt.style.use('dark_background')
         plt.rcParams['font.family'] = 'DejaVu Sans'
         plt.rcParams['axes.unicode_minus'] = False
@@ -562,160 +329,117 @@ class BelarusAgroModel:
         print("🌾 ОПТИМИЗАЦИЯ СЕЛЬСКОГО ХОЗЯЙСТВА БЕЛАРУСИ")
         print("=" * 80)
 
+        # Сбор данных
         years_data = {}
         all_crops = set()
 
-        for y in m.Y:
-            year_val = int(pyo.value(y))
-            weather_data = self.weather[year_val]
+        for y in m.YEARS:
+            year_val = pyo.value(y)
+            weather = self.weather[year_val]
 
-            # Погода
-            if isinstance(weather_data, dict) and 'temp' in weather_data and 'rain' in weather_data:
-                avg_temp = weather_data['temp']
-                total_rain = weather_data['rain']
-                weather_desc = weather_data.get('desc', f'Год {year_val}')
-            else:
-                temps = [weather_data[m]['temp'] for m in range(1, 13) if m in weather_data]
-                rains = [weather_data[m]['rain'] for m in range(1, 13) if m in weather_data]
-                avg_temp = sum(temps) / len(temps) if temps else 0
-                total_rain = sum(rains) if rains else 0
-                weather_desc = f'Год {year_val}'
-
-            # Животноводство
             years_data[year_val] = {
                 'cows': pyo.value(m.cows[y]),
-                'cattle': pyo.value(m.cattle[y]),
-                'pigs': pyo.value(m.pigs[y]),
-                'milk_summer': pyo.value(m.milk_yield_summer[y]) or 0,
-                'milk_winter': pyo.value(m.milk_yield_winter[y]) or 0,
                 'crops': {},
-                'avg_temp': avg_temp,
-                'total_rain': total_rain
+                'avg_temp': weather.temp,
+                'total_rain': weather.rain
             }
 
-            # Посевы
-            for f in m.F:
-                for c in m.C:
-                    area = pyo.value(m.area[c, f, y])
-                    if area > 0.5:
-                        years_data[year_val]['crops'][c] = years_data[year_val]['crops'].get(c, 0) + area
-                        if c != 'fallow':
-                            all_crops.add(c)
+            for field in m.FIELDS:
+                for crop in m.CROPS:
+                    area = pyo.value(m.area[crop, field, y])
+                    if area is not None and area > 0.5:
+                        years_data[year_val]['crops'][crop] = years_data[year_val]['crops'].get(crop, 0) + area
+                        if crop != 'fallow':
+                            all_crops.add(crop)
 
         years = sorted(years_data.keys())
 
-        # ========== ТЕКСТОВЫЙ ВЫВОД ==========
+        # Текстовый вывод
         for year_val, data in years_data.items():
             print(f"\n{'─' * 80}")
             print(f"📅 ГОД {year_val}")
             print(f"🌡️  {data['avg_temp']:.1f}°C | 💧 {data['total_rain']:.0f} мм")
             print(f"{'─' * 80}")
 
-            print(f"\n🐄 ЖИВОТНОВОДСТВО:")
-            print(
-                f"   Коровы: {data['cows']:>8.0f} гол. | КРС: {data['cattle']:>8.0f} гол. | Свиньи: {data['pigs']:>8.0f} гол.")
-            print(f"   Удой лето: {data['milk_summer']:>8.0f} кг/гол | зима: {data['milk_winter']:>8.0f} кг/гол")
+            print(f"\n🐄 ПОГОЛОВЬЕ:")
+            print(f"   Коровы: {data['cows']:>8.0f} гол.")
 
             print(f"\n🌾 ПОСЕВЫ (га):")
             for crop, area in sorted(data['crops'].items(), key=lambda x: -x[1]):
-                if crop != 'fallow':
-                    print(f"   {crop:20} : {area:>8.1f} га ({area / self.total_land * 100:>5.1f}%)")
+                name = crop_names_ru.get(crop, crop)
+                pct = area / self.total_land * 100
+                print(f"   {name:20} : {area:>8.1f} га ({pct:>5.1f}%)")
 
-            fallow = data['crops'].get('fallow', 0)
-            if fallow > 0:
-                print(f"   {'пар':20} : {fallow:>8.1f} га ({fallow / self.total_land * 100:>5.1f}%)")
-
-        # ========== РАСЧЁТ ПРИБЫЛИ ==========
+        # Расчёт прибыли
         profits = {}
-        crop_names_ru = {
-            'winter_wheat': 'Озимая пшеница', 'spring_wheat': 'Яровая пшеница',
-            'barley': 'Ячмень', 'rapeseed': 'Рапс', 'potato': 'Картофель',
-            'sugar_beet': 'Сахарная свёкла', 'corn_silage': 'Кукуруза силос', 'grass': 'Травы'
-        }
+        for year in m.YEARS:
+            year_val = pyo.value(year)
+            revenue = 0
+            expenses = 0
 
-        for year_val, data in years_data.items():
-            # Доходы и затраты
-            crop_revenue = sum(self.price.get(c, 0) * pyo.value(m.production[c, f, year_val]) for c in m.C for f in m.F)
-            crop_costs = sum(self.cost.get(c, 0) * pyo.value(m.area[c, f, year_val]) for c in m.C for f in m.F)
-            fert_costs = sum(self.fert_cost * pyo.value(m.fert[f, year_val]) * self.field_area.get(f, 0) for f in m.F)
+            for field in m.FIELDS:
+                for crop in m.CROPS:
+                    if crop != 'fallow':
+                        prod_val = pyo.value(m.production[crop, field, year])
+                        area_val = pyo.value(m.area[crop, field, year])
+                        if prod_val is not None:
+                            revenue += self.price.get(crop, 0) * prod_val
+                        if area_val is not None:
+                            expenses += self.cost.get(crop, 0) * area_val
 
-            milk_revenue = (self.milk_price * data['milk_summer'] * data['cows'] * self.summer_days +
-                            self.milk_price * data['milk_winter'] * data['cows'] * self.winter_days) / 365
+            milk_revenue = self.milk_price * pyo.value(m.cows[year]) * self.milk_yield / 1000
+            cow_expenses = pyo.value(m.cows[year]) * 2500
+            profits[year_val] = revenue + milk_revenue - expenses - cow_expenses
 
-            # Затраты на корма
-            feed_costs = 0
-            for ft in m.FEED:
-                feed_costs += self.feed_price_summer.get(ft, 0) * (
-                        pyo.value(m.cow_feed_summer[year_val, ft]) * data['cows'] +
-                        pyo.value(m.cattle_feed_summer[year_val, ft]) * data['cattle'] +
-                        pyo.value(m.pig_feed_summer[year_val, ft]) * data['pigs']
-                ) * self.summer_days
-                feed_costs += self.feed_price_winter.get(ft, 0) * (
-                        pyo.value(m.cow_feed_winter[year_val, ft]) * data['cows'] +
-                        pyo.value(m.cattle_feed_winter[year_val, ft]) * data['cattle'] +
-                        pyo.value(m.pig_feed_winter[year_val, ft]) * data['pigs']
-                ) * self.winter_days
-            feed_costs = feed_costs / 365 / 100
+        # ========== ГРАФИКИ (как в начальной модели) ==========
+        plots_dir = "/app/plots"
+        os.makedirs(plots_dir, exist_ok=True)
 
-            # Затраты на животных
-            cow_costs = (self.cow_cost_summer * self.summer_days + self.cow_cost_winter * self.winter_days) / 365 * \
-                        data['cows']
-            cattle_costs = (
-                                       self.cattle_cost_summer * self.summer_days + self.cattle_cost_winter * self.winter_days) / 365 * \
-                           data['cattle']
-            pig_costs = (self.pig_cost_summer * self.summer_days + self.pig_cost_winter * self.winter_days) / 365 * \
-                        data['pigs']
-
-            winter_energy = (self.energy_cost_cow_winter * data['cows'] +
-                             self.energy_cost_cattle_winter * data['cattle'] +
-                             self.energy_cost_pig_winter * data['pigs']) * (self.winter_days / 365)
-
-            animal_costs = cow_costs + cattle_costs + pig_costs + winter_energy + feed_costs
-
-            beef_revenue = self.beef_price * self.base_beef_yield * data['cattle'] * 0.9
-            pork_revenue = self.pork_price * self.base_pork_yield * data['pigs'] * 0.95
-
-            profits[
-                year_val] = crop_revenue - crop_costs - fert_costs + milk_revenue + beef_revenue + pork_revenue - animal_costs
-
-        # ========== ГРАФИКИ ==========
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         fig.suptitle('Структура посевов и прибыль по годам', fontsize=14, fontweight='bold', color='white')
+        fig.patch.set_facecolor('#2e2e2e')
+
+        for ax in axes.flat:
+            ax.set_facecolor('#2e2e2e')
+            ax.tick_params(colors='white')
+            ax.xaxis.label.set_color('white')
+            ax.yaxis.label.set_color('white')
+            ax.title.set_color('white')
 
         # Круговые диаграммы
-        for i, year in enumerate(years):
+        for i, year in enumerate(years[:2]):  # Максимум 2 года
             crops_list = [c for c in years_data[year]['crops'].keys() if c != 'fallow']
             if crops_list:
                 areas = [years_data[year]['crops'].get(c, 0) for c in crops_list]
                 labels = [crop_names_ru.get(c, c) for c in crops_list]
                 colors = plt.cm.Set3(np.linspace(0, 1, len(crops_list)))
-                axes[0, i].pie(areas, labels=labels, autopct='%1.1f%%', colors=colors, startangle=90)
+                textprops = {'color': 'white', 'fontsize': 9}
+                axes[0, i].pie(areas, labels=labels, autopct='%1.1f%%',
+                               colors=colors, startangle=90, textprops=textprops)
                 axes[0, i].set_title(f'Структура посевов (Год {year})', fontsize=12, color='white')
             else:
                 axes[0, i].text(0.5, 0.5, 'Нет данных', ha='center', va='center', color='white')
                 axes[0, i].set_title(f'Структура посевов (Год {year})', fontsize=12, color='white')
 
-        # Сравнение площадей
-        all_crops_list = sorted([c for c in all_crops if c != 'fallow'])
-        if all_crops_list:
-            x = np.arange(len(all_crops_list))
-            width = 0.35
-            areas1 = [years_data[years[0]]['crops'].get(c, 0) for c in all_crops_list]
-            areas2 = [years_data[years[1]]['crops'].get(c, 0) for c in all_crops_list]
-            labels = [crop_names_ru.get(c, c) for c in all_crops_list]
+        # Сравнение площадей (если есть 2 года)
+        if len(years) >= 2:
+            all_crops_list = sorted([c for c in all_crops if c != 'fallow'])
+            if all_crops_list:
+                x = np.arange(len(all_crops_list))
+                width = 0.35
+                areas1 = [years_data[years[0]]['crops'].get(c, 0) for c in all_crops_list]
+                areas2 = [years_data[years[1]]['crops'].get(c, 0) for c in all_crops_list]
+                labels = [crop_names_ru.get(c, c) for c in all_crops_list]
 
-            axes[1, 0].bar(x - width / 2, areas1, width, label=f'Год {years[0]}', color='#66c2a5')
-            axes[1, 0].bar(x + width / 2, areas2, width, label=f'Год {years[1]}', color='#fc8d62')
-            axes[1, 0].set_ylabel('Площадь (га)', color='white')
-            axes[1, 0].set_title('Сравнение посевных площадей', fontsize=12, color='white')
-            axes[1, 0].set_xticks(x)
-            axes[1, 0].set_xticklabels(labels, rotation=45, ha='right', color='white')
-            axes[1, 0].legend()
-            axes[1, 0].tick_params(axis='y', colors='white')
-            axes[1, 0].grid(axis='y', alpha=0.3, color='gray')
-        else:
-            axes[1, 0].text(0.5, 0.5, 'Нет данных', ha='center', va='center', color='white')
-            axes[1, 0].set_title('Сравнение посевных площадей', fontsize=12, color='white')
+                axes[1, 0].bar(x - width / 2, areas1, width, label=f'Год {years[0]}', color='#66c2a5')
+                axes[1, 0].bar(x + width / 2, areas2, width, label=f'Год {years[1]}', color='#fc8d62')
+                axes[1, 0].set_ylabel('Площадь (га)', color='white')
+                axes[1, 0].set_title('Сравнение посевных площадей', fontsize=12, color='white')
+                axes[1, 0].set_xticks(x)
+                axes[1, 0].set_xticklabels(labels, rotation=45, ha='right', color='white')
+                axes[1, 0].legend()
+                axes[1, 0].tick_params(axis='y', colors='white')
+                axes[1, 0].grid(axis='y', alpha=0.3, color='gray')
 
         # График прибыли
         profits_list = [profits[y] for y in years]
@@ -731,14 +455,50 @@ class BelarusAgroModel:
                             f'{profit:,.0f}', ha='center', va='bottom', fontsize=10, color='white')
 
         plt.tight_layout()
-        plt.show()
 
-        # ========== ИТОГ ==========
-        total = pyo.value(m.obj)
+        # Сохранение графиков
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        main_plot_path = os.path.join(plots_dir, f'optimization_plots_{timestamp}.png')
+        plt.savefig(main_plot_path, dpi=150, bbox_inches='tight', facecolor='#2e2e2e')
+        print(f"📊 Основной график сохранён: {main_plot_path}")
+
+        latest_plot_path = os.path.join(plots_dir, 'optimization_plots_latest.png')
+        plt.savefig(latest_plot_path, dpi=150, bbox_inches='tight', facecolor='#2e2e2e')
+        print(f"📊 Последний график сохранён: {latest_plot_path}")
+
+        # Отдельный график прибыли
+        fig_profit, ax_profit = plt.subplots(figsize=(10, 6))
+        fig_profit.patch.set_facecolor('#2e2e2e')
+        ax_profit.set_facecolor('#2e2e2e')
+
+        bars = ax_profit.bar(years, profits_list, color=['#66c2a5', '#fc8d62'])
+        ax_profit.set_ylabel('Прибыль (BYN)', fontsize=12, color='white')
+        ax_profit.set_xlabel('Год', fontsize=12, color='white')
+        ax_profit.set_title('Прибыль по годам', fontsize=14, fontweight='bold', color='white')
+        ax_profit.tick_params(colors='white')
+        ax_profit.grid(axis='y', alpha=0.3, color='gray')
+
+        for bar, profit in zip(bars, profits_list):
+            ax_profit.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 50000,
+                           f'{profit:,.0f}', ha='center', va='bottom', fontsize=11, color='white')
+
+        profit_plot_path = os.path.join(plots_dir, f'profit_by_year_{timestamp}.png')
+        plt.savefig(profit_plot_path, dpi=150, bbox_inches='tight', facecolor='#2e2e2e')
+        print(f"💰 График прибыли сохранён: {profit_plot_path}")
+
+        profit_latest_path = os.path.join(plots_dir, 'profit_by_year_latest.png')
+        plt.savefig(profit_latest_path, dpi=150, bbox_inches='tight', facecolor='#2e2e2e')
+
+        plt.close('all')
+
+        # Итог
+        total = sum(profits.values())
         print(f"\n{'=' * 80}")
-        print(f"🏆 ОБЩАЯ ПРИБЫЛЬ ЗА 2 ГОДА: {total:>15,.0f} BYN")
-        print(f"💰 СРЕДНЕГОДОВАЯ ПРИБЫЛЬ: {total / 2:>15,.0f} BYN")
+        print(f"🏆 ОБЩАЯ ПРИБЫЛЬ ЗА {len(years)} ГОДА: {total:>15,.0f} BYN")
+        print(f"💰 СРЕДНЕГОДОВАЯ ПРИБЫЛЬ: {total / len(years):>15,.0f} BYN")
         print(f"\n📊 ПРИБЫЛЬ ПО ГОДАМ:")
-        print(f"   Год {years[0]}: {profits[years[0]]:>15,.0f} BYN")
-        print(f"   Год {years[1]}: {profits[years[1]]:>15,.0f} BYN")
+        for year in years:
+            print(f"   Год {year}: {profits[year]:>15,.0f} BYN")
+        print(f"\n📁 ГРАФИКИ СОХРАНЕНЫ В ПАПКЕ: {plots_dir}")
         print("=" * 80)
+

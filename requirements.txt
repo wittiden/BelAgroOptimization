@@ -1,16 +1,21 @@
+#validation
 pydantic~=2.13.4
 pydantic-settings~=2.14.1
 
-sqlalchemy~=2.0.49
+#db & orm & migrations
+sqlalchemy~=2.0.50
 psycopg~=3.3.4
 psycopg-binary~=3.3.4
 alembic~=1.18.4
 
+#optimization
 pyomo~=6.10.0
-numpy~=2.4.4
+numpy~=2.4.6
 matplotlib~=3.10.9
 # IPOPT устанавливается отдельно: conda install -c conda-forge ipopt cyipopt -y
 
-ruff~=0.15.12
+#linter & formater
+ruff~=0.15.14
 
+#logging
 loguru~=0.7.3

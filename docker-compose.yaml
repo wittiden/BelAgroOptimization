@@ -1,0 +1,93 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    labels:
+      - author=wittiden
+      - project=BelAgroOptimization
+      - version=1.1
+    image: bel_agro_app:1
+    container_name: bel_agro_app
+    networks:
+      - network
+    restart: no
+    env_file:
+      - .env
+    environment:
+      - MPLBACKEND=Agg
+    volumes:
+      - ./plots:/app/plots
+    depends_on:
+      db:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync+restart
+          path: .
+          target: /app
+        - action: rebuild
+          path: requirements.txt
+
+  migrations:
+    build:
+      context: .
+    command: ["alembic", "upgrade", "head"]
+    container_name: bel_agro_migrations
+    networks:
+      - network
+    restart: no
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - migrations
+
+  db:
+    image: postgres:16-alpine
+    container_name: bel_agro_db
+    networks:
+      - network
+    ports:
+      - "${DB_PORT_EX}:5432"
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+    volumes:
+      - volume:/var/lib/postgresql/data
+    stop_grace_period: 30s
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: bel_agro_pgadmin
+    networks:
+      - network
+    ports:
+      - "${PGADMIN_PORT}:80"
+    restart: unless-stopped
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASS}
+    depends_on:
+      db:
+        condition: service_healthy
+
+
+networks:
+  network:
+    driver: bridge
+    name: bel_agro_network
+
+
+volumes:
+  volume:
+    name: bel_agro_volume

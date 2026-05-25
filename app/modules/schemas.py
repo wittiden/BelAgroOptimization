@@ -105,8 +105,10 @@ class ModelDataSchema(BaseModel):
 
         result = self.model_dump(exclude={
             'crop_params', 'field_params', 'feed_price', 'feed_need',
-            'cows', 'cattle', 'pigs'
+            'cows', 'cattle', 'pigs',
+            'weather',
         })
+        result['weather'] = self.weather
 
         for key in ['base_yield', 'price', 'cost', 'seed_cost', 'fert_response']:
             result[key] = {

@@ -212,8 +212,8 @@ seed.sql
 # ▶️ Запуск проекта
 
 ```bash
-conda activate agro_env
-python -m app.main
+docker compose --profile migrations up --build
+docker compose up
 ```
 
 ---
