@@ -1,20 +1,12 @@
 pydantic==2.5.0
 pydantic-settings==2.1.0
-
-# db & orm & migrations
 sqlalchemy==2.0.25
 psycopg==3.2.0
 psycopg-binary==3.2.10
 alembic==1.13.0
-
-# optimization
 pyomo==6.7.0
 numpy==1.24.3
 pandas==2.0.3
 matplotlib==3.7.2
-
-# linter & formater
 ruff==0.1.14
-
-# logging
 loguru==0.7.2

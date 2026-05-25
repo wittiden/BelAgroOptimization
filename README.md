@@ -41,15 +41,18 @@
 
 # ⚙️ Технологии
 
-* Python 3.14
-* Pyomo 6.10+
-* IPOPT 3.14+
-* SQLAlchemy 2.0+
-* PostgreSQL
-* Alembic
-* Pydantic 2.13+
+* Python 3.10
+* GLPK
+* pydantic
+* pydantic-settings
+* sqlalchemy
+* psycopg-binary
+* alembic
+* pyomo
+* numpy
 * pandas
 * matplotlib
+* ruff
 * loguru
 
 ---
@@ -93,7 +96,7 @@
                     │
                     ▼
 ┌──────────────────────────────────────────────┐
-│ IPOPT Solver                                │
+│ GLPK Solver                                  │
 └──────────────────────────────────────────────┘
 ```
 
@@ -150,61 +153,20 @@ cd AgroOptimization
 
 ---
 
-## 2. Создание окружения
+## 2. Настройка всех зависимостей
 
 ```bash
-conda create -n agro_env python=3.14 -y
-conda activate agro_env
+docker compose --profile migrations up --build
 ```
 
 ---
 
-## 3. Установка IPOPT
+## 3. Заполнение базы начальными данными
 
-```bash
-conda install -c conda-forge ipopt cyipopt -y
-```
-
----
-
-## 4. Установка зависимостей
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## 5. Создание базы данных PostgreSQL
-
-```sql
-CREATE DATABASE agro_optimization_dev
-```
-
-Настроить подключение в:
+Выполнить SQL-скрипт из файла:
 
 ```text
-app/database/config.py
-```
-
-или через переменные окружения.
-
----
-
-## 6. Выполнение миграций
-
-```bash
-alembic upgrade head
-```
-
----
-
-## 7. Заполнение базы начальными данными
-
-Выполнить SQL-скрипт:
-
-```text
-seed.sql
+script_sql.txt
 ```
 
 ---
@@ -212,7 +174,6 @@ seed.sql
 # ▶️ Запуск проекта
 
 ```bash
-docker compose --profile migrations up --build
 docker compose up
 ```
 
@@ -239,7 +200,7 @@ docker compose up
 * ✔ PostgreSQL + SQLAlchemy ORM
 * ✔ Alembic миграции
 * ✔ Поддержка сценариев
-* ✔ Нелинейная оптимизация
+* ✔ Линейная оптимизация
 * ✔ Убывающая отдача кормления
 * ✔ Баланс кормов
 * ✔ Сезонность производства
@@ -248,11 +209,3 @@ docker compose up
 * ✔ Хранение результатов оптимизации
 * ✔ Matplotlib визуализация
 
----
-
-# 📈 Возможные улучшения
-
-* динамика плодородия почв
-* машинно-тракторный парк
-* трудовые ресурсы
-* Streamlit/FastAPI интерфейс

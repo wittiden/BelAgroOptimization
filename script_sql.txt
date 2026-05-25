@@ -1,0 +1,456 @@
+-- ==========================================================
+-- ВКЛЮЧАЕМ РАСШИРЕНИЕ UUID
+-- ==========================================================
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ==========================================================
+-- ОЧИСТКА ДАННЫХ ПЕРЕД ЗАГРУЗКОЙ
+-- ==========================================================
+TRUNCATE TABLE monthly_operations CASCADE;
+TRUNCATE TABLE feed_allocations CASCADE;
+TRUNCATE TABLE livestock_allocations CASCADE;
+TRUNCATE TABLE crop_allocations CASCADE;
+TRUNCATE TABLE optimization_results CASCADE;
+TRUNCATE TABLE feed_outputs CASCADE;
+TRUNCATE TABLE feed_data CASCADE;
+TRUNCATE TABLE livestock_data CASCADE;
+TRUNCATE TABLE weather_data CASCADE;
+TRUNCATE TABLE field_data CASCADE;
+TRUNCATE TABLE crop_data CASCADE;
+TRUNCATE TABLE fields CASCADE;
+TRUNCATE TABLE crops CASCADE;
+TRUNCATE TABLE scenarios CASCADE;
+
+-- ==========================================================
+-- ДОБАВЛЯЕМ DEFAULT ДЛЯ ВСЕХ ТАБЛИЦ
+-- ==========================================================
+
+DO $$
+DECLARE
+    tables text[] := ARRAY[
+        'scenarios', 'crops', 'fields', 'crop_data', 'field_data',
+        'weather_data', 'livestock_data', 'feed_data', 'feed_outputs',
+        'optimization_results', 'crop_allocations', 'livestock_allocations',
+        'feed_allocations', 'monthly_operations'
+    ];
+    tablename text;
+    id_column text;
+BEGIN
+    FOREACH tablename IN ARRAY tables
+    LOOP
+        CASE tablename
+            WHEN 'scenarios' THEN id_column := 'scenario_id';
+            WHEN 'crops' THEN id_column := 'crop_id';
+            WHEN 'fields' THEN id_column := 'field_id';
+            WHEN 'crop_data' THEN id_column := 'crop_data_id';
+            WHEN 'field_data' THEN id_column := 'field_data_id';
+            WHEN 'weather_data' THEN id_column := 'weather_data_id';
+            WHEN 'livestock_data' THEN id_column := 'livestock_data_id';
+            WHEN 'feed_data' THEN id_column := 'feed_data_id';
+            WHEN 'feed_outputs' THEN id_column := 'feed_output_id';
+            WHEN 'optimization_results' THEN id_column := 'result_id';
+            WHEN 'crop_allocations' THEN id_column := 'crop_allocation_id';
+            WHEN 'livestock_allocations' THEN id_column := 'livestock_allocation_id';
+            WHEN 'feed_allocations' THEN id_column := 'feed_allocation_id';
+            WHEN 'monthly_operations' THEN id_column := 'monthly_operation_id';
+        END CASE;
+
+        EXECUTE format('ALTER TABLE %I ALTER COLUMN %I SET DEFAULT gen_random_uuid();', tablename, id_column);
+    END LOOP;
+END $$;
+
+-- ==========================================================
+-- 1. СЦЕНАРИЙ (3 ГОДА)
+-- ==========================================================
+INSERT INTO scenarios (name, description, created_at, is_active) VALUES
+('Базовый сценарий 2024-2026', 'Базовый сценарий для оптимизации сельского хозяйства Беларуси на 3 года', NOW(), true);
+
+-- ==========================================================
+-- 2. КУЛЬТУРЫ
+-- ==========================================================
+INSERT INTO crops (code, name, is_permanent, is_fallow, sowing_months, harvest_months, vegetation_days, rotation_gap_years) VALUES
+('winter_wheat', 'Озимая пшеница', false, false, ARRAY[8,9], ARRAY[6,7], 280, 1),
+('spring_wheat', 'Яровая пшеница', false, false, ARRAY[4,5], ARRAY[7,8], 110, 1),
+('barley', 'Ячмень', false, false, ARRAY[4,5], ARRAY[7,8], 100, 1),
+('rapeseed', 'Рапс', false, false, ARRAY[4,5], ARRAY[7,8], 120, 2),
+('potato', 'Картофель', false, false, ARRAY[5,6], ARRAY[8,9], 110, 2),
+('sugar_beet', 'Сахарная свёкла', false, false, ARRAY[4,5], ARRAY[9,10], 170, 3),
+('corn_silage', 'Кукуруза на силос', false, false, ARRAY[5,6], ARRAY[8,9], 120, 1),
+('grass', 'Многолетние травы', true, false, ARRAY[4,5,8,9], ARRAY[6,7,8,9], 180, 0),
+('fallow', 'Пар', false, true, ARRAY[]::int[], ARRAY[]::int[], 0, 0);
+
+-- ==========================================================
+-- 3. ПОЛЯ
+-- ==========================================================
+INSERT INTO fields (code, area_ha, soil_type, soil_fertility) VALUES
+('field1', 150.0, 'чернозём', 1.2),
+('field2', 200.0, 'суглинок', 1.0),
+('field3', 180.0, 'супесь', 0.9),
+('field4', 120.0, 'чернозём', 1.1),
+('field5', 250.0, 'суглинок', 1.0);
+
+-- ==========================================================
+-- 4. ДАННЫЕ ПО СЦЕНАРИЮ (КУЛЬТУРЫ)
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+    var_crop_record RECORD;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    FOR var_crop_record IN
+        SELECT crop_id, code FROM crops WHERE code IN (
+            'winter_wheat', 'spring_wheat', 'barley', 'rapeseed',
+            'potato', 'sugar_beet', 'corn_silage', 'grass', 'fallow'
+        )
+    LOOP
+        INSERT INTO crop_data (
+            scenario_id, crop_id, base_yield_tha, price_byn_per_ts, cost_byn_per_ha,
+            seed_cost_byn_per_ha, max_area_pct, max_fert_kg, fert_cost_byn_per_kg,
+            fert_response, optimal_temp, temp_sensitivity, water_requirement_mm
+        ) VALUES
+        (
+            var_scenario_id, var_crop_record.crop_id,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 45.0
+                WHEN 'spring_wheat' THEN 38.0
+                WHEN 'barley' THEN 38.0
+                WHEN 'rapeseed' THEN 25.0
+                WHEN 'potato' THEN 260.0
+                WHEN 'sugar_beet' THEN 450.0
+                WHEN 'corn_silage' THEN 500.0
+                WHEN 'grass' THEN 180.0
+                WHEN 'fallow' THEN 0.0
+            END,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 55.0
+                WHEN 'spring_wheat' THEN 50.0
+                WHEN 'barley' THEN 45.0
+                WHEN 'rapeseed' THEN 105.0
+                WHEN 'potato' THEN 60.0
+                WHEN 'sugar_beet' THEN 14.0
+                WHEN 'corn_silage' THEN 9.0
+                WHEN 'grass' THEN 11.0
+                WHEN 'fallow' THEN 0.0
+            END,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 1200.0
+                WHEN 'spring_wheat' THEN 1000.0
+                WHEN 'barley' THEN 950.0
+                WHEN 'rapeseed' THEN 1400.0
+                WHEN 'potato' THEN 5000.0
+                WHEN 'sugar_beet' THEN 3100.0
+                WHEN 'corn_silage' THEN 1600.0
+                WHEN 'grass' THEN 850.0
+                WHEN 'fallow' THEN 50.0
+            END,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 150.0
+                WHEN 'spring_wheat' THEN 130.0
+                WHEN 'barley' THEN 120.0
+                WHEN 'rapeseed' THEN 180.0
+                WHEN 'potato' THEN 1000.0
+                WHEN 'sugar_beet' THEN 300.0
+                WHEN 'corn_silage' THEN 200.0
+                WHEN 'grass' THEN 100.0
+                WHEN 'fallow' THEN 0.0
+            END,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 40.0
+                WHEN 'spring_wheat' THEN 40.0
+                WHEN 'barley' THEN 35.0
+                WHEN 'rapeseed' THEN 15.0
+                WHEN 'potato' THEN 18.0
+                WHEN 'sugar_beet' THEN 15.0
+                WHEN 'corn_silage' THEN 30.0
+                WHEN 'grass' THEN 40.0
+                WHEN 'fallow' THEN 10.0
+            END,
+            180.0, 2.7,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 0.10
+                WHEN 'spring_wheat' THEN 0.09
+                WHEN 'barley' THEN 0.08
+                WHEN 'rapeseed' THEN 0.07
+                WHEN 'potato' THEN 0.32
+                WHEN 'sugar_beet' THEN 0.45
+                WHEN 'corn_silage' THEN 0.18
+                WHEN 'grass' THEN 0.10
+                WHEN 'fallow' THEN 0.00
+            END,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 18.0
+                WHEN 'spring_wheat' THEN 19.0
+                WHEN 'barley' THEN 19.0
+                WHEN 'rapeseed' THEN 20.0
+                WHEN 'potato' THEN 17.0
+                WHEN 'sugar_beet' THEN 19.0
+                WHEN 'corn_silage' THEN 22.0
+                WHEN 'grass' THEN 18.0
+                ELSE NULL
+            END,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 0.07
+                WHEN 'spring_wheat' THEN 0.08
+                WHEN 'barley' THEN 0.07
+                WHEN 'rapeseed' THEN 0.09
+                WHEN 'potato' THEN 0.12
+                WHEN 'sugar_beet' THEN 0.08
+                WHEN 'corn_silage' THEN 0.10
+                WHEN 'grass' THEN 0.06
+                ELSE NULL
+            END,
+            CASE var_crop_record.code
+                WHEN 'winter_wheat' THEN 500.0
+                WHEN 'spring_wheat' THEN 480.0
+                WHEN 'barley' THEN 450.0
+                WHEN 'rapeseed' THEN 520.0
+                WHEN 'potato' THEN 550.0
+                WHEN 'sugar_beet' THEN 600.0
+                WHEN 'corn_silage' THEN 550.0
+                WHEN 'grass' THEN 500.0
+                ELSE NULL
+            END
+        );
+    END LOOP;
+END $$;
+
+-- ==========================================================
+-- 5. ДАННЫЕ ПО ПОЛЯМ ДЛЯ СЦЕНАРИЯ
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+    var_field_record RECORD;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    FOR var_field_record IN SELECT field_id, area_ha FROM fields LOOP
+        INSERT INTO field_data (scenario_id, field_id, area_ha) VALUES
+        (var_scenario_id, var_field_record.field_id, var_field_record.area_ha);
+    END LOOP;
+END $$;
+
+-- ==========================================================
+-- 6. ПОГОДНЫЕ ДАННЫЕ ЗА 3 ГОДА (2024, 2025, 2026)
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    -- ========== ГОД 2024: НОРМАЛЬНЫЙ (среднегодовая ~7.5°C, осадки ~650 мм) ==========
+    INSERT INTO weather_data (scenario_id, year, month, temperature_avg, rainfall_mm, description) VALUES
+    (var_scenario_id, 2024, 1, -4.5, 42, 'Нормальный год'),
+    (var_scenario_id, 2024, 2, -3.8, 38, 'Нормальный год'),
+    (var_scenario_id, 2024, 3, 1.2, 45, 'Нормальный год'),
+    (var_scenario_id, 2024, 4, 8.5, 52, 'Нормальный год'),
+    (var_scenario_id, 2024, 5, 14.2, 62, 'Нормальный год'),
+    (var_scenario_id, 2024, 6, 17.5, 72, 'Нормальный год'),
+    (var_scenario_id, 2024, 7, 19.0, 85, 'Нормальный год'),
+    (var_scenario_id, 2024, 8, 18.2, 75, 'Нормальный год'),
+    (var_scenario_id, 2024, 9, 12.8, 58, 'Нормальный год'),
+    (var_scenario_id, 2024, 10, 7.0, 52, 'Нормальный год'),
+    (var_scenario_id, 2024, 11, 1.5, 48, 'Нормальный год'),
+    (var_scenario_id, 2024, 12, -2.5, 45, 'Нормальный год');
+
+    -- ========== ГОД 2025: ЗАСУШЛИВЫЙ И ЖАРКИЙ (среднегодовая ~9.5°C, осадки ~450 мм) ==========
+    INSERT INTO weather_data (scenario_id, year, month, temperature_avg, rainfall_mm, description) VALUES
+    (var_scenario_id, 2025, 1, -3.0, 28, 'Засушливый год'),
+    (var_scenario_id, 2025, 2, -2.0, 25, 'Засушливый год'),
+    (var_scenario_id, 2025, 3, 3.5, 32, 'Засушливый год'),
+    (var_scenario_id, 2025, 4, 11.0, 38, 'Засушливый год'),
+    (var_scenario_id, 2025, 5, 17.0, 45, 'Засушливый год'),
+    (var_scenario_id, 2025, 6, 21.0, 48, 'Засушливый год'),
+    (var_scenario_id, 2025, 7, 23.5, 42, 'Засушливый год'),
+    (var_scenario_id, 2025, 8, 22.5, 38, 'Засушливый год'),
+    (var_scenario_id, 2025, 9, 16.0, 35, 'Засушливый год'),
+    (var_scenario_id, 2025, 10, 9.5, 40, 'Засушливый год'),
+    (var_scenario_id, 2025, 11, 3.0, 42, 'Засушливый год'),
+    (var_scenario_id, 2025, 12, -1.0, 35, 'Засушливый год');
+
+    -- ========== ГОД 2026: ВЛАЖНЫЙ И ХОЛОДНЫЙ (среднегодовая ~6.0°C, осадки ~750 мм) ==========
+    INSERT INTO weather_data (scenario_id, year, month, temperature_avg, rainfall_mm, description) VALUES
+    (var_scenario_id, 2026, 1, -6.0, 55, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 2, -5.5, 50, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 3, -0.5, 58, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 4, 6.5, 65, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 5, 12.5, 75, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 6, 16.0, 88, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 7, 17.5, 102, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 8, 16.5, 92, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 9, 11.5, 70, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 10, 6.0, 60, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 11, 0.5, 52, 'Влажный холодный год'),
+    (var_scenario_id, 2026, 12, -3.5, 48, 'Влажный холодный год');
+END $$;
+
+-- ==========================================================
+-- 7. ДАННЫЕ ПО ЖИВОТНОВОДСТВУ
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    INSERT INTO livestock_data (
+        scenario_id, animal_type, min_heads, max_heads,
+        base_yield_kg, max_yield_kg, price_byn_per_kg,
+        cost_summer_byn, cost_winter_byn, energy_cost_winter_byn
+    ) VALUES
+    (var_scenario_id, 'cow', 200, 1200, 5000.0, 8000.0, 1.9, 3800.0, 5200.0, 800.0),
+    (var_scenario_id, 'cattle', 200, 1800, 250.0, 380.0, 8.2, 2200.0, 3000.0, 400.0),
+    (var_scenario_id, 'pig', 500, 4000, 100.0, 160.0, 7.0, 1000.0, 1500.0, 300.0);
+END $$;
+
+-- ==========================================================
+-- 8. ДАННЫЕ ПО КОРМАМ
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    INSERT INTO feed_data (
+        scenario_id, feed_type, price_byn_per_centner,
+        cow_need, cattle_need, pig_need,
+        cow_max, cattle_max, pig_max,
+        milk_efficiency, beef_efficiency, pork_efficiency,
+        diminishing_beta, available_months,
+        winter_price_multiplier, summer_price_multiplier
+    ) VALUES
+    (
+        var_scenario_id, 'silage', 22.0,
+        22.0, 16.0, 0.0,
+        40.0, 30.0, 0.0,
+        0.6, 0.05, 0.0,
+        0.12, ARRAY[5,6,7,8,9,10],
+        1.4, 1.0
+    ),
+    (
+        var_scenario_id, 'hay', 30.0,
+        8.0, 6.0, 0.0,
+        14.0, 10.0, 0.0,
+        1.0, 0.08, 0.0,
+        0.12, ARRAY[1,2,3,4,5,6,7,8,9,10,11,12],
+        1.3, 1.0
+    ),
+    (
+        var_scenario_id, 'concentrate', 75.0,
+        5.0, 4.0, 3.5,
+        9.0, 7.0, 8.0,
+        2.5, 0.18, 0.20,
+        0.12, ARRAY[1,2,3,4,5,6,7,8,9,10,11,12],
+        1.15, 1.0
+    ),
+    (
+        var_scenario_id, 'pasture', 0.0,
+        20.0, 15.0, 0.0,
+        30.0, 25.0, 0.0,
+        0.4, 0.04, 0.0,
+        0.12, ARRAY[5,6,7,8,9],
+        0.0, 1.0
+    );
+END $$;
+
+-- ==========================================================
+-- 9. ВЫХОД КОРМОВ ИЗ КУЛЬТУР
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+    var_crop_record RECORD;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    FOR var_crop_record IN SELECT crop_id, code FROM crops LOOP
+        IF var_crop_record.code = 'winter_wheat' THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.08),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.45);
+        ELSIF var_crop_record.code IN ('spring_wheat', 'barley') THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.08),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.45);
+        ELSIF var_crop_record.code = 'barley' THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.50);
+        ELSIF var_crop_record.code = 'rapeseed' THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.03),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.16);
+        ELSIF var_crop_record.code = 'potato' THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.10),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.03);
+        ELSIF var_crop_record.code = 'sugar_beet' THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.22);
+        ELSIF var_crop_record.code = 'corn_silage' THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.95);
+        ELSIF var_crop_record.code = 'grass' THEN
+            INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.20),
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.65),
+            (var_scenario_id, var_crop_record.crop_id, 'pasture', 0.20);
+        END IF;
+    END LOOP;
+END $$;
+
+-- ==========================================================
+-- 10. ПРОВЕРКА ВСТАВКИ
+-- ==========================================================
+SELECT 'scenarios' as table_name, COUNT(*) as count FROM scenarios
+UNION ALL
+SELECT 'crops', COUNT(*) FROM crops
+UNION ALL
+SELECT 'fields', COUNT(*) FROM fields
+UNION ALL
+SELECT 'crop_data', COUNT(*) FROM crop_data
+UNION ALL
+SELECT 'field_data', COUNT(*) FROM field_data
+UNION ALL
+SELECT 'weather_data', COUNT(*) FROM weather_data
+UNION ALL
+SELECT 'livestock_data', COUNT(*) FROM livestock_data
+UNION ALL
+SELECT 'feed_data', COUNT(*) FROM feed_data
+UNION ALL
+SELECT 'feed_outputs', COUNT(*) FROM feed_outputs;
+
+-- ==========================================================
+-- 11. СВОДНАЯ ИНФОРМАЦИЯ
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+    var_weather_years INTEGER;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+    SELECT COUNT(DISTINCT year) INTO var_weather_years FROM weather_data WHERE scenario_id = var_scenario_id;
+
+    RAISE NOTICE '==========================================';
+    RAISE NOTICE '✅ ДАННЫЕ УСПЕШНО ЗАГРУЖЕНЫ';
+    RAISE NOTICE '==========================================';
+    RAISE NOTICE 'Сценарий: Базовый сценарий 2024-2026';
+    RAISE NOTICE 'ID сценария: %', var_scenario_id;
+    RAISE NOTICE '==========================================';
+    RAISE NOTICE 'ГОДА В СЦЕНАРИИ: 2024, 2025, 2026';
+    RAISE NOTICE 'Количество лет: %', var_weather_years;
+    RAISE NOTICE '==========================================';
+    RAISE NOTICE 'ПОГОДНЫЕ УСЛОВИЯ ПО ГОДАМ:';
+    RAISE NOTICE '  2024 - Нормальный год (температура ~7.5°C, осадки ~650 мм)';
+    RAISE NOTICE '  2025 - Засушливый год (температура ~9.5°C, осадки ~420 мм)';
+    RAISE NOTICE '  2026 - Влажный холодный год (температура ~6.0°C, осадки ~750 мм)';
+    RAISE NOTICE '==========================================';
+    RAISE NOTICE 'КУЛЬТУР: 9 (пшеница, ячмень, рапс, картофель, свекла, кукуруза, травы, пар)';
+    RAISE NOTICE 'ПОЛЕЙ: 5 (общая площадь 900 га)';
+    RAISE NOTICE 'ЖИВОТНЫЕ: коровы, КРС, свиньи';
+    RAISE NOTICE 'КОРМА: силос, сено, концентраты, пастбище';
+    RAISE NOTICE '==========================================';
+END $$;
