@@ -14,8 +14,6 @@ services:
     restart: no
     env_file:
       - .env
-    environment:
-      - MPLBACKEND=Agg
     volumes:
       - ./plots:/app/plots
     depends_on:

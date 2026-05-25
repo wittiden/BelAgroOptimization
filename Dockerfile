@@ -1,18 +1,14 @@
-FROM continuumio/miniconda3:latest AS conda
-FROM python:3.14-slim
+FROM python:3.10-slim
 
-COPY --from=conda /opt/conda /opt/conda
-
-ENV PATH="/opt/conda/bin:${PATH}"
-
-WORKDIR /app
-
-RUN conda install -c conda-forge ipopt cyipopt -y && \
-    conda clean --all -y
+RUN apt-get update && apt-get install -y \
+    glpk-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
+
+WORKDIR /app
 
 COPY . .
 
