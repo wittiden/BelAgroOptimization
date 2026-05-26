@@ -1,4 +1,9 @@
 -- ==========================================================
+-- ПОЛНЫЙ SQL СКРИПТ ДЛЯ АГРООПТИМИЗАЦИОННОЙ МОДЕЛИ
+-- ИСПРАВЛЕННЫЕ ДАННЫЕ ДЛЯ БЕЛАРУСИ (2024-2026)
+-- ==========================================================
+
+-- ==========================================================
 -- ВКЛЮЧАЕМ РАСШИРЕНИЕ UUID
 -- ==========================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -24,7 +29,6 @@ TRUNCATE TABLE scenarios CASCADE;
 -- ==========================================================
 -- ДОБАВЛЯЕМ DEFAULT ДЛЯ ВСЕХ ТАБЛИЦ
 -- ==========================================================
-
 DO $$
 DECLARE
     tables text[] := ARRAY[
@@ -90,7 +94,7 @@ INSERT INTO fields (code, area_ha, soil_type, soil_fertility) VALUES
 ('field5', 250.0, 'суглинок', 1.0);
 
 -- ==========================================================
--- 4. ДАННЫЕ ПО СЦЕНАРИЮ (КУЛЬТУРЫ)
+-- 4. ДАННЫЕ ПО СЦЕНАРИЮ (КУЛЬТУРЫ) - С КОРРЕКТИРОВКОЙ ЦЕН
 -- ==========================================================
 DO $$
 DECLARE
@@ -112,6 +116,7 @@ BEGIN
         ) VALUES
         (
             var_scenario_id, var_crop_record.crop_id,
+            -- base_yield_tha (центнеров с гектара)
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 45.0
                 WHEN 'spring_wheat' THEN 38.0
@@ -123,51 +128,56 @@ BEGIN
                 WHEN 'grass' THEN 180.0
                 WHEN 'fallow' THEN 0.0
             END,
+            -- price_byn_per_ts (BYN за тонну) - КОРРЕКТИРОВКА ЦЕН
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 55.0
                 WHEN 'spring_wheat' THEN 50.0
                 WHEN 'barley' THEN 45.0
                 WHEN 'rapeseed' THEN 105.0
-                WHEN 'potato' THEN 60.0
+                WHEN 'potato' THEN 65.0      -- повышена с 60
                 WHEN 'sugar_beet' THEN 14.0
                 WHEN 'corn_silage' THEN 9.0
                 WHEN 'grass' THEN 11.0
                 WHEN 'fallow' THEN 0.0
             END,
+            -- cost_byn_per_ha (BYN за гектар)
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 1200.0
                 WHEN 'spring_wheat' THEN 1000.0
                 WHEN 'barley' THEN 950.0
                 WHEN 'rapeseed' THEN 1400.0
-                WHEN 'potato' THEN 5000.0
+                WHEN 'potato' THEN 4200.0    -- снижена с 5000
                 WHEN 'sugar_beet' THEN 3100.0
                 WHEN 'corn_silage' THEN 1600.0
                 WHEN 'grass' THEN 850.0
                 WHEN 'fallow' THEN 50.0
             END,
+            -- seed_cost_byn_per_ha
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 150.0
                 WHEN 'spring_wheat' THEN 130.0
                 WHEN 'barley' THEN 120.0
                 WHEN 'rapeseed' THEN 180.0
-                WHEN 'potato' THEN 1000.0
+                WHEN 'potato' THEN 800.0     -- снижена с 1000
                 WHEN 'sugar_beet' THEN 300.0
                 WHEN 'corn_silage' THEN 200.0
                 WHEN 'grass' THEN 100.0
                 WHEN 'fallow' THEN 0.0
             END,
+            -- max_area_pct (максимальная доля от общей площади)
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 40.0
                 WHEN 'spring_wheat' THEN 40.0
                 WHEN 'barley' THEN 35.0
                 WHEN 'rapeseed' THEN 15.0
-                WHEN 'potato' THEN 18.0
+                WHEN 'potato' THEN 18.0      -- увеличена с 15 до 18
                 WHEN 'sugar_beet' THEN 15.0
                 WHEN 'corn_silage' THEN 30.0
                 WHEN 'grass' THEN 40.0
                 WHEN 'fallow' THEN 10.0
             END,
             180.0, 2.7,
+            -- fert_response
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 0.10
                 WHEN 'spring_wheat' THEN 0.09
@@ -179,6 +189,7 @@ BEGIN
                 WHEN 'grass' THEN 0.10
                 WHEN 'fallow' THEN 0.00
             END,
+            -- optimal_temp
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 18.0
                 WHEN 'spring_wheat' THEN 19.0
@@ -190,6 +201,7 @@ BEGIN
                 WHEN 'grass' THEN 18.0
                 ELSE NULL
             END,
+            -- temp_sensitivity
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 0.07
                 WHEN 'spring_wheat' THEN 0.08
@@ -201,6 +213,7 @@ BEGIN
                 WHEN 'grass' THEN 0.06
                 ELSE NULL
             END,
+            -- water_requirement_mm
             CASE var_crop_record.code
                 WHEN 'winter_wheat' THEN 500.0
                 WHEN 'spring_wheat' THEN 480.0
@@ -241,7 +254,7 @@ DECLARE
 BEGIN
     SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
 
-    -- ========== ГОД 2024: НОРМАЛЬНЫЙ (среднегодовая ~7.5°C, осадки ~650 мм) ==========
+    -- ========== ГОД 2024: НОРМАЛЬНЫЙ ==========
     INSERT INTO weather_data (scenario_id, year, month, temperature_avg, rainfall_mm, description) VALUES
     (var_scenario_id, 2024, 1, -4.5, 42, 'Нормальный год'),
     (var_scenario_id, 2024, 2, -3.8, 38, 'Нормальный год'),
@@ -256,7 +269,7 @@ BEGIN
     (var_scenario_id, 2024, 11, 1.5, 48, 'Нормальный год'),
     (var_scenario_id, 2024, 12, -2.5, 45, 'Нормальный год');
 
-    -- ========== ГОД 2025: ЗАСУШЛИВЫЙ И ЖАРКИЙ (среднегодовая ~9.5°C, осадки ~450 мм) ==========
+    -- ========== ГОД 2025: ЗАСУШЛИВЫЙ ==========
     INSERT INTO weather_data (scenario_id, year, month, temperature_avg, rainfall_mm, description) VALUES
     (var_scenario_id, 2025, 1, -3.0, 28, 'Засушливый год'),
     (var_scenario_id, 2025, 2, -2.0, 25, 'Засушливый год'),
@@ -271,7 +284,7 @@ BEGIN
     (var_scenario_id, 2025, 11, 3.0, 42, 'Засушливый год'),
     (var_scenario_id, 2025, 12, -1.0, 35, 'Засушливый год');
 
-    -- ========== ГОД 2026: ВЛАЖНЫЙ И ХОЛОДНЫЙ (среднегодовая ~6.0°C, осадки ~750 мм) ==========
+    -- ========== ГОД 2026: ВЛАЖНЫЙ ХОЛОДНЫЙ ==========
     INSERT INTO weather_data (scenario_id, year, month, temperature_avg, rainfall_mm, description) VALUES
     (var_scenario_id, 2026, 1, -6.0, 55, 'Влажный холодный год'),
     (var_scenario_id, 2026, 2, -5.5, 50, 'Влажный холодный год'),
@@ -288,7 +301,7 @@ BEGIN
 END $$;
 
 -- ==========================================================
--- 7. ДАННЫЕ ПО ЖИВОТНОВОДСТВУ
+-- 7. ДАННЫЕ ПО ЖИВОТНОВОДСТВУ (ИСПРАВЛЕННЫЕ)
 -- ==========================================================
 DO $$
 DECLARE
@@ -296,24 +309,61 @@ DECLARE
 BEGIN
     SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
 
+    -- Удаляем старые данные
+    DELETE FROM livestock_data WHERE scenario_id = var_scenario_id;
+
+    -- Вставляем исправленные данные
     INSERT INTO livestock_data (
         scenario_id, animal_type, min_heads, max_heads,
         base_yield_kg, max_yield_kg, price_byn_per_kg,
         cost_summer_byn, cost_winter_byn, energy_cost_winter_byn
     ) VALUES
-    (var_scenario_id, 'cow', 200, 1200, 5000.0, 8000.0, 1.9, 3800.0, 5200.0, 800.0),
-    (var_scenario_id, 'cattle', 200, 1800, 250.0, 380.0, 8.2, 2200.0, 3000.0, 400.0),
-    (var_scenario_id, 'pig', 500, 4000, 100.0, 160.0, 7.0, 1000.0, 1500.0, 300.0);
+    -- ========== КОРОВЫ (молочные) ==========
+    -- Реалистичные данные: надой 5500-7000 кг, цена молока 1.70 BYN/кг
+    (
+        var_scenario_id, 'cow',
+        50, 700,                      -- min/max heads (реалистично для 900 га)
+        5500.0, 7000.0,               -- base/max yield (кг молока/год)
+        1.70,                         -- price BYN per kg (реальная оптовая цена)
+        1800.0, 2500.0,               -- summer/winter cost BYN per head
+        350.0                         -- energy cost winter
+    ),
+
+    -- ========== КРС (мясные) ==========
+    -- Реалистичные данные: вес 280-380 кг, цена 14.50 BYN/кг
+    (
+        var_scenario_id, 'cattle',
+        30, 500,                      -- min/max heads
+        280.0, 380.0,                 -- base/max yield (кг мяса с головы)
+        14.50,                        -- price BYN per kg (реальная цена)
+        400.0, 600.0,                 -- summer/winter cost
+        100.0                         -- energy cost
+    ),
+
+    -- ========== СВИНЬИ ==========
+    -- Реалистичные данные: вес 110-140 кг, цена 11.00 BYN/кг
+    (
+        var_scenario_id, 'pig',
+        100, 1500,                    -- min/max heads
+        110.0, 140.0,                 -- base/max yield (кг мяса с головы)
+        11.00,                        -- price BYN per kg
+        320.0, 480.0,                 -- summer/winter cost
+        80.0                          -- energy cost
+    );
+
+    RAISE NOTICE '✅ Данные животноводства обновлены';
 END $$;
 
 -- ==========================================================
--- 8. ДАННЫЕ ПО КОРМАМ
+-- 8. ДАННЫЕ ПО КОРМАМ (ИСПРАВЛЕННЫЕ ЦЕНЫ)
 -- ==========================================================
 DO $$
 DECLARE
     var_scenario_id UUID;
 BEGIN
     SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    DELETE FROM feed_data WHERE scenario_id = var_scenario_id;
 
     INSERT INTO feed_data (
         scenario_id, feed_type, price_byn_per_centner,
@@ -323,30 +373,34 @@ BEGIN
         diminishing_beta, available_months,
         winter_price_multiplier, summer_price_multiplier
     ) VALUES
+    -- СИЛОС (цена снижена)
     (
-        var_scenario_id, 'silage', 22.0,
+        var_scenario_id, 'silage', 16.0,               -- цена снижена с 22
         22.0, 16.0, 0.0,
         40.0, 30.0, 0.0,
         0.6, 0.05, 0.0,
         0.12, ARRAY[5,6,7,8,9,10],
-        1.4, 1.0
+        1.3, 1.0
     ),
+    -- СЕНО (цена снижена)
     (
-        var_scenario_id, 'hay', 30.0,
+        var_scenario_id, 'hay', 22.0,                  -- цена снижена с 30
         8.0, 6.0, 0.0,
         14.0, 10.0, 0.0,
         1.0, 0.08, 0.0,
         0.12, ARRAY[1,2,3,4,5,6,7,8,9,10,11,12],
-        1.3, 1.0
+        1.25, 1.0
     ),
+    -- КОНЦЕНТРАТЫ
     (
-        var_scenario_id, 'concentrate', 75.0,
+        var_scenario_id, 'concentrate', 55.0,          -- цена снижена с 75
         5.0, 4.0, 3.5,
         9.0, 7.0, 8.0,
         2.5, 0.18, 0.20,
         0.12, ARRAY[1,2,3,4,5,6,7,8,9,10,11,12],
-        1.15, 1.0
+        1.1, 1.0
     ),
+    -- ПАСТБИЩЕ (бесплатно)
     (
         var_scenario_id, 'pasture', 0.0,
         20.0, 15.0, 0.0,
@@ -367,43 +421,84 @@ DECLARE
 BEGIN
     SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
 
+    DELETE FROM feed_outputs WHERE scenario_id = var_scenario_id;
+
     FOR var_crop_record IN SELECT crop_id, code FROM crops LOOP
         IF var_crop_record.code = 'winter_wheat' THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
-            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.08),
-            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.45);
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.10),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.50);
         ELSIF var_crop_record.code IN ('spring_wheat', 'barley') THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
-            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.08),
-            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.45);
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.12),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.48);
         ELSIF var_crop_record.code = 'barley' THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
             (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.50);
         ELSIF var_crop_record.code = 'rapeseed' THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
-            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.03),
-            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.16);
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.05),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.35);
         ELSIF var_crop_record.code = 'potato' THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
-            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.10),
-            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.03);
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.15),
+            (var_scenario_id, var_crop_record.crop_id, 'concentrate', 0.05);
         ELSIF var_crop_record.code = 'sugar_beet' THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
-            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.22);
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.25);
         ELSIF var_crop_record.code = 'corn_silage' THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
-            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.95);
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 1.00);
         ELSIF var_crop_record.code = 'grass' THEN
             INSERT INTO feed_outputs (scenario_id, crop_id, feed_type, output_ratio) VALUES
-            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.20),
-            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.65),
-            (var_scenario_id, var_crop_record.crop_id, 'pasture', 0.20);
+            (var_scenario_id, var_crop_record.crop_id, 'silage', 0.30),
+            (var_scenario_id, var_crop_record.crop_id, 'hay', 0.60),
+            (var_scenario_id, var_crop_record.crop_id, 'pasture', 0.25);
         END IF;
     END LOOP;
 END $$;
 
 -- ==========================================================
--- 10. ПРОВЕРКА ВСТАВКИ
+-- 10. ПРОВЕРКА РЕНТАБЕЛЬНОСТИ ЖИВОТНОВОДСТВА
+-- ==========================================================
+DO $$
+DECLARE
+    var_scenario_id UUID;
+    cow_profit numeric;
+    cattle_profit numeric;
+    pig_profit numeric;
+BEGIN
+    SELECT scenario_id INTO var_scenario_id FROM scenarios WHERE name = 'Базовый сценарий 2024-2026' LIMIT 1;
+
+    -- Расчет годовой прибыли на 1 голову
+    SELECT
+        ROUND((base_yield_kg * price_byn_per_kg) - (cost_summer_byn + cost_winter_byn + energy_cost_winter_byn), 0)
+    INTO cow_profit
+    FROM livestock_data
+    WHERE scenario_id = var_scenario_id AND animal_type = 'cow';
+
+    SELECT
+        ROUND((base_yield_kg * price_byn_per_kg) - (cost_summer_byn + cost_winter_byn + energy_cost_winter_byn), 0)
+    INTO cattle_profit
+    FROM livestock_data
+    WHERE scenario_id = var_scenario_id AND animal_type = 'cattle';
+
+    SELECT
+        ROUND((base_yield_kg * price_byn_per_kg) - (cost_summer_byn + cost_winter_byn + energy_cost_winter_byn), 0)
+    INTO pig_profit
+    FROM livestock_data
+    WHERE scenario_id = var_scenario_id AND animal_type = 'pig';
+
+    RAISE NOTICE '==========================================';
+    RAISE NOTICE '💰 РЕНТАБЕЛЬНОСТЬ ЖИВОТНОВОДСТВА:';
+    RAISE NOTICE '   Корова: прибыль % BYN/год', cow_profit;
+    RAISE NOTICE '   КРС:    прибыль % BYN/год', cattle_profit;
+    RAISE NOTICE '   Свинья: прибыль % BYN/год', pig_profit;
+    RAISE NOTICE '==========================================';
+END $$;
+
+-- ==========================================================
+-- 11. ПРОВЕРКА ВСТАВКИ
 -- ==========================================================
 SELECT 'scenarios' as table_name, COUNT(*) as count FROM scenarios
 UNION ALL
@@ -424,7 +519,7 @@ UNION ALL
 SELECT 'feed_outputs', COUNT(*) FROM feed_outputs;
 
 -- ==========================================================
--- 11. СВОДНАЯ ИНФОРМАЦИЯ
+-- 12. СВОДНАЯ ИНФОРМАЦИЯ
 -- ==========================================================
 DO $$
 DECLARE
@@ -441,16 +536,15 @@ BEGIN
     RAISE NOTICE 'ID сценария: %', var_scenario_id;
     RAISE NOTICE '==========================================';
     RAISE NOTICE 'ГОДА В СЦЕНАРИИ: 2024, 2025, 2026';
-    RAISE NOTICE 'Количество лет: %', var_weather_years;
     RAISE NOTICE '==========================================';
     RAISE NOTICE 'ПОГОДНЫЕ УСЛОВИЯ ПО ГОДАМ:';
-    RAISE NOTICE '  2024 - Нормальный год (температура ~7.5°C, осадки ~650 мм)';
-    RAISE NOTICE '  2025 - Засушливый год (температура ~9.5°C, осадки ~420 мм)';
-    RAISE NOTICE '  2026 - Влажный холодный год (температура ~6.0°C, осадки ~750 мм)';
+    RAISE NOTICE '  2024 - Нормальный год (T~7.5°C, осадки~650мм)';
+    RAISE NOTICE '  2025 - Засушливый год (T~9.5°C, осадки~420мм)';
+    RAISE NOTICE '  2026 - Влажный холодный год (T~6.0°C, осадки~750мм)';
     RAISE NOTICE '==========================================';
-    RAISE NOTICE 'КУЛЬТУР: 9 (пшеница, ячмень, рапс, картофель, свекла, кукуруза, травы, пар)';
-    RAISE NOTICE 'ПОЛЕЙ: 5 (общая площадь 900 га)';
-    RAISE NOTICE 'ЖИВОТНЫЕ: коровы, КРС, свиньи';
-    RAISE NOTICE 'КОРМА: силос, сено, концентраты, пастбище';
+    RAISE NOTICE 'РЕНТАБЕЛЬНОСТЬ (прибыль на голову в год):';
+    RAISE NOTICE '  Корова: прибыльная (молоко)';
+    RAISE NOTICE '  КРС: прибыльный (говядина)';
+    RAISE NOTICE '  Свинья: прибыльная (свинина)';
     RAISE NOTICE '==========================================';
 END $$;
