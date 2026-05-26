@@ -25,7 +25,7 @@ class LivestockParamsSchema(BaseModel):
     @computed_field
     @property
     def avg_cost(self) -> float:
-        return (self.cost_summer * 183 + self.cost_winter * 182) / 365
+        return self.cost_summer + self.cost_winter + self.energy_winter
 
 
 class CropParamsSchema(BaseModel):
@@ -89,12 +89,12 @@ class ModelDataSchema(BaseModel):
     diminishing_beta: dict[str, float]
     feed_output: dict[str, dict[str, float]]
 
-    #Константы
+    # Константы
     summer_days: int = 183
     winter_days: int = 182
     winter_productivity_factor: dict[str, float] = {'milk': 0.82, 'beef': 0.85, 'pork': 0.88}
     grain_min_pct: float = 0.35
-    feed_crop_min_pct: float = 0.20
+    feed_crop_min_pct: float = 0.15
     fallow_min_pct: float = 0.05
     potato_max_pct: float = 0.18
     rapeseed_max_pct: float = 0.15
@@ -134,6 +134,7 @@ class ModelDataSchema(BaseModel):
             'min_cows': self.cows.min_heads,
             'min_cattle': self.cattle.min_heads,
             'min_pigs': self.pigs.min_heads,
+            'milk_yield': self.cows.base_yield,
             'base_milk_yield': self.cows.base_yield,
             'base_beef_yield': self.cattle.base_yield,
             'base_pork_yield': self.pigs.base_yield,

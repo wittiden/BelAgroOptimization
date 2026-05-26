@@ -16,6 +16,7 @@ def main():
 
         if model.solve():
             model.print_results()
+            model.create_plots('./plots')
 
 
 if __name__ == "__main__":
