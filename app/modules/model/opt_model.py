@@ -74,7 +74,7 @@ class BelarusAgroModel:
 
     # Скрытые затраты животноводства (BYN/голову/год), не включённые в cost_summer/winter
     OVERHEAD_COST_PER_HEAD = {
-        'cow':    3450.0,
+        'cow':    3500.0,
         'cattle': 1500.0,
         'pig':     250.0,
     }
