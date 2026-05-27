@@ -156,14 +156,14 @@ cd AgroOptimization
 ## 2. Настройка всех зависимостей
 
 ```bash
-docker compose --profile migrations up --build
+docker compose --profile migrations --profile pgadmin up --build
 ```
 
 ---
 
 ## 3. Заполнение базы начальными данными
 
-Выполнить SQL-скрипт из файла:
+Выполнить в запущенном pgadmin SQL-скрипт из файла:
 
 ```text
 script_sql.txt
