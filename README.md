@@ -144,13 +144,7 @@ AgroOptimization/
 
 # 🚀 Развертывание
 
-## 1. Инициализация
-
-```bash
-git init
-```
-
-## 2. Клонирование репозитория
+## 1. Клонирование репозитория
 
 ```bash
 git clone https://github.com/wittiden/BelAgroOptimization.git   
@@ -158,7 +152,7 @@ git clone https://github.com/wittiden/BelAgroOptimization.git
 
 ---
 
-## 3. Настройка всех зависимостей
+## 2. Настройка всех зависимостей
 
 ```bash
 docker compose --profile migrations --profile pgadmin up --build
@@ -166,7 +160,7 @@ docker compose --profile migrations --profile pgadmin up --build
 
 ---
 
-## 4. Заполнение базы начальными данными
+## 3. Заполнение базы начальными данными
 
 Выполнить в запущенном pgadmin SQL-скрипт из файла:
 
