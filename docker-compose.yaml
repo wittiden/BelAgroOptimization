@@ -11,7 +11,9 @@ services:
     container_name: bel_agro_app
     networks:
       - network
-    restart: no
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
     env_file:
       - .env
     volumes:
@@ -26,6 +28,20 @@ services:
           target: /app
         - action: rebuild
           path: requirements.txt
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: bel_agro_frontend:1.0
+    container_name: bel_agro_frontend
+    networks:
+      - network
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      - app
 
   migrations:
     build:

@@ -133,7 +133,31 @@ AgroOptimization/
 │   │   │
 │   │   └── schemas.py
 │   │
+│   ├── api/
+│   │   ├── routers/
+│   │   │   ├── dashboard.py
+│   │   │   ├── data.py
+│   │   │   ├── optimization.py
+│   │   │   └── scenarios.py
+│   │   ├── deps.py
+│   │   ├── main.py
+│   │   ├── mock_data.py
+│   │   └── schemas.py
+│   │
 │   └── main.py
+│
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   ├── components/
+│   │   ├── context/
+│   │   ├── pages/
+│   │   ├── types/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   └── package.json
 │
 ├── migrations/
 ├── requirements.txt
@@ -172,9 +196,32 @@ script_sql.txt
 
 # ▶️ Запуск проекта
 
+## Вариант 1: Через Docker Compose (Full-stack)
+
 ```bash
-docker compose up
+docker compose up --build
 ```
+
+* **Веб-интерфейс (Frontend)**: [http://localhost:3000](http://localhost:3000)
+* **REST API (FastAPI Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+* **pgAdmin**: [http://localhost:5050](http://localhost:5050)
+
+---
+
+## Вариант 2: Локальный запуск для разработки
+
+### 1. Запуск Backend API (FastAPI)
+```bash
+uvicorn app.api.main:app --reload --port 8000
+```
+
+### 2. Запуск Frontend (Vite + React)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Интерфейс откроется по адресу: [http://localhost:5173](http://localhost:5173)
 
 ---
 
