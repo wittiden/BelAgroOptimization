@@ -4,12 +4,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Настройки подключения к бд"""
 
-    DB_USER: str
-    DB_PASS: str
-    DB_HOST: str
-    DB_PORT: int
-    DB_NAME: str
-    MODE: str
+    DB_USER: str = 'postgres'
+    DB_PASS: str = 'postgres'
+    DB_HOST: str = 'localhost'
+    DB_PORT: int = 5432
+    DB_NAME: str = 'agro_optimization_dev'
+    MODE: str = 'DEV'
 
     @property
     def database_url(self) -> str:
